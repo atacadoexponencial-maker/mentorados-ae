@@ -1,8 +1,8 @@
 "use client";
 
 import {
-  AlertTriangle, ArrowLeft, Award, BarChart3, Bell, CalendarDays, Check,
-  ChevronDown, ChevronRight, CircleHelp, Clock3, ExternalLink, Filter,
+  AlertTriangle, ArrowLeft, Award, Bell, CalendarDays, Check,
+  ChevronRight, CircleHelp, Clock3, ExternalLink, Filter,
   LayoutDashboard, LogOut, Medal, Menu, MoreHorizontal, Plus, RefreshCw, Search, Settings,
   Sparkles, Target, Trophy, UserCheck, Users, Video, X,
 } from "lucide-react";
@@ -16,6 +16,12 @@ type View = "dashboard" | "mentees" | "agenda" | "achievements";
 const date = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short" });
 const longDate = new Intl.DateTimeFormat("pt-BR", { weekday: "long", day: "2-digit", month: "long" });
 const time = new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" });
+const weekdayShort = new Intl.DateTimeFormat("pt-BR", { weekday: "short" });
+const meetingDateKeyFormatter = new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" });
+
+function meetingDayKey(value: string) {
+  return meetingDateKeyFormatter.format(new Date(value));
+}
 
 const unassignedMentor = { id: "unassigned", name: "Não definido", initials: "—", color: "#89928c", contact: "" };
 function mentor(id: string) { return mentors.find((item) => item.id === id) ?? unassignedMentor; }
@@ -83,7 +89,10 @@ export function MentoriaApp({ userEmail, onSignOut }: { userEmail: string; onSig
   }), [menteeList, search, riskFilter]);
 
   function navigate(next: View) {
-    setView(next); setMobileNav(false); setSearch(""); setSelectedMentee(null);
+    setView(next);
+    setMobileNav(false);
+    setSearch("");
+    setSelectedMentee(null);
   }
 
   return (
@@ -102,10 +111,10 @@ export function MentoriaApp({ userEmail, onSignOut }: { userEmail: string; onSig
         <div className="content">
           {dataError && <div className="data-error"><span>Não foi possível carregar o Supabase: {dataError}</span><button onClick={() => void refreshData()}><RefreshCw size={15} /> Tentar novamente</button></div>}
           {dataLoading ? <div className="data-loading"><RefreshCw size={22} /><p>Carregando sua carteira...</p></div> : <>
-          {view === "dashboard" && <Dashboard active={active} atRisk={atRisk} absent={absent} mentees={menteeList} meetings={meetingList} achievements={achievementList} openMentee={setSelectedMentee} openMeeting={setSelectedMeeting} seeAll={navigate} newMentee={() => setModal("mentee")} />}
-          {view === "mentees" && <MenteesView list={filteredMentees} search={search} setSearch={setSearch} risk={riskFilter} setRisk={setRiskFilter} open={setSelectedMentee} add={() => setModal("mentee")} />}
-          {view === "agenda" && <AgendaView meetings={meetingList} openMeeting={setSelectedMeeting} />}
-          {view === "achievements" && <AchievementsView achievements={achievementList} mentees={menteeList} add={() => setModal("achievement")} />}
+            {view === "dashboard" && <Dashboard active={active} atRisk={atRisk} absent={absent} mentees={menteeList} meetings={meetingList} achievements={achievementList} openMentee={setSelectedMentee} openMeeting={setSelectedMeeting} seeAll={navigate} newMentee={() => setModal("mentee")} />}
+            {view === "mentees" && <MenteesView list={filteredMentees} search={search} setSearch={setSearch} risk={riskFilter} setRisk={setRiskFilter} open={setSelectedMentee} add={() => setModal("mentee")} />}
+            {view === "agenda" && <AgendaView meetings={meetingList} openMeeting={setSelectedMeeting} />}
+            {view === "achievements" && <AchievementsView achievements={achievementList} mentees={menteeList} add={() => setModal("achievement")} />}
           </>}
         </div>
       </main>
@@ -126,6 +135,7 @@ function Sidebar({ view, navigate, count, open, close, syncing, onSync }: { view
     { id: "agenda", label: "Agenda", icon: CalendarDays },
     { id: "achievements", label: "Conquistas", icon: Award },
   ];
+
   return <>
     {open && <div className="nav-overlay" onClick={close} />}
     <aside className={`sidebar ${open ? "sidebar-open" : ""}`}>
@@ -177,25 +187,68 @@ function CardTitle({ eyebrow, title, action, onClick }: { eyebrow: string; title
 
 function MeetingRow({ meeting, last, onClick }: { meeting: Meeting; last?: boolean; onClick: () => void }) {
   const start = new Date(meeting.startsAt);
-  return <div className={`meeting-row ${last ? "last" : ""}`}><div className="meeting-time"><b>{time.format(start)}</b><small>{meeting.duration} min</small></div><div className="timeline-mark"><i /><span /></div><div className="meeting-info"><span className={`type-badge ${meeting.type === "Grupo" ? "group" : ""}`}>{meeting.type}</span><strong>{meeting.title.replace(/^.*· /, "")}</strong><small>{meeting.mentorIds.map((id) => mentor(id).name).join(" + ")}</small></div><a href={meeting.meetUrl} target="_blank" onClick={(e) => e.stopPropagation()}><Video size={16} /> Entrar no Meet</a><button className="more-button" onClick={onClick} aria-label="Registrar participação"><MoreHorizontal size={19} /></button></div>;
+  return <div className={`meeting-row ${last ? "last" : ""}`}><div className="meeting-time"><b>{time.format(start)}</b><small>{meeting.duration} min</small></div><div className="timeline-mark"><i /><span /></div><div className="meeting-info"><span className={`type-badge ${meeting.type === "Grupo" ? "group" : ""}`}>{meeting.type}</span><strong>{meeting.title.replace(/^.*· /, "")}</strong><small>{meeting.front}</small></div><a href={meeting.meetUrl} target="_blank" onClick={(e) => e.stopPropagation()}><Video size={16} /> Entrar no Meet</a><button className="more-button" onClick={onClick} aria-label="Registrar participação"><MoreHorizontal size={19} /></button></div>;
 }
 
 function MenteesView({ list, search, setSearch, risk, setRisk, open, add }: { list: Mentee[]; search: string; setSearch: (s: string) => void; risk: "Todos" | Risk; setRisk: (r: "Todos" | Risk) => void; open: (m: Mentee) => void; add: () => void }) {
   return <div className="full-page"><section className="section-heading"><div><p>CARTEIRA DE CLIENTES</p><h1>Mentorados</h1><h2>Contexto e acompanhamento de cada jornada.</h2></div><button className="primary-button" onClick={add}><Plus size={18} /> Novo mentorado</button></section>
     <div className="toolbar"><label className="search"><Search size={18} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por nome ou empresa..." /></label><div className="filter"><Filter size={16} /><select value={risk} onChange={(e) => setRisk(e.target.value as "Todos" | Risk)}><option>Todos</option><option>Baixo</option><option>Médio</option><option>Alto</option></select></div></div>
-    <div className="table-card"><div className="table-row table-head"><span>MENTORADO</span><span>MENTOR PRINCIPAL</span><span>ÚLTIMA PARTICIPAÇÃO</span><span>RISCO</span><span>STATUS</span><span /></div>{list.map((item) => <button className="table-row" key={item.id} onClick={() => open(item)}><span className="person-cell"><Avatar item={item} /><span><b>{item.name}</b><small>{item.company} · {item.role}</small></span></span><span className="mentor-cell"><span className="mini-avatar">{mentor(item.mainMentorId).initials}</span>{mentor(item.mainMentorId).name}</span><span>{date.format(new Date(item.lastParticipation + "T12:00:00"))}</span><span><RiskBadge risk={item.risk} /></span><span><StatusBadge status={item.status} /></span><ChevronRight size={17} /></button>)}{!list.length && <Empty text="Nenhum mentorado encontrado." />}</div>
+    <div className="table-card"><div className="table-row table-head"><span>MENTORADO</span><span>ÚLTIMA PARTICIPAÇÃO</span><span>RISCO</span><span>STATUS</span><span /></div>{list.map((item) => <button className="table-row" key={item.id} onClick={() => open(item)}><span className="person-cell"><Avatar item={item} /><span><b>{item.name}</b><small>{item.company} · {item.role}</small></span></span><span>{date.format(new Date(item.lastParticipation + "T12:00:00"))}</span><span><RiskBadge risk={item.risk} /></span><span><StatusBadge status={item.status} /></span><ChevronRight size={17} /></button>)}{!list.length && <Empty text="Nenhum mentorado encontrado." />}</div>
   </div>;
 }
 
 function AgendaView({ meetings, openMeeting }: { meetings: Meeting[]; openMeeting: (m: Meeting) => void }) {
+  const groupedMeetings = meetings.reduce((groups, meeting) => {
+    const key = meetingDayKey(meeting.startsAt);
+    const current = groups.get(key) ?? [];
+    current.push(meeting);
+    groups.set(key, current);
+    return groups;
+  }, new Map<string, Meeting[]>());
+
+  const groupedEntries = [...groupedMeetings.entries()];
+  const [selectedDayKey, setSelectedDayKey] = useState(groupedEntries[0]?.[0] ?? "");
+
+  useEffect(() => {
+    if (!groupedEntries.length) {
+      setSelectedDayKey("");
+      return;
+    }
+    if (!selectedDayKey || !groupedMeetings.has(selectedDayKey)) {
+      setSelectedDayKey(groupedEntries[0][0]);
+    }
+  }, [groupedEntries, groupedMeetings, selectedDayKey]);
+
+  const weekDays = groupedEntries.slice(0, 5).map(([key, items], index) => {
+    const currentDate = new Date(`${key}T12:00:00-03:00`);
+    return {
+      key,
+      label: weekdayShort.format(currentDate).replace(".", "").toUpperCase(),
+      day: currentDate.getDate(),
+      current: key === selectedDayKey || (!selectedDayKey && index === 0),
+      total: items.length,
+    };
+  });
+
+  const visibleEntries = selectedDayKey
+    ? groupedEntries.filter(([key]) => key === selectedDayKey)
+    : groupedEntries.slice(0, 1);
+
   return <div className="full-page"><section className="section-heading"><div><p>GOOGLE CALENDAR</p><h1>Agenda</h1><h2>Encontros da equipe em um só lugar.</h2></div><div className="synced-pill"><span className="google-g">G</span><i /> Sincronizado</div></section>
-    <div className="week-strip">{[30,1,2,3,4].map((day, i) => <button key={day} className={i === 0 ? "today" : ""}><small>{["TER", "QUA", "QUI", "SEX", "SÁB"][i]}</small><strong>{day}</strong>{i === 0 && <i />}</button>)}</div>
-    <div className="agenda-full">{meetings.length ? <><div className="day-label"><span>PRÓXIMOS</span><p>eventos sincronizados</p></div>{meetings.map((item) => <AgendaItem key={item.id} item={item} open={() => openMeeting(item)} />)}</> : <Empty text="Nenhum encontro sincronizado com o Calendar." />}</div>
+    <div className="week-strip">{weekDays.map((day) => <button key={day.key} className={day.current ? "today" : ""} onClick={() => setSelectedDayKey(day.key)}><small>{day.label}</small><strong>{day.day}</strong>{day.current && <i />}</button>)}</div>
+    <div className="agenda-full">{visibleEntries.length ? visibleEntries.map(([key, items]) => {
+      const currentDate = new Date(`${key}T12:00:00-03:00`);
+      return <div key={key}>
+        <div className="day-label"><span>DIA SELECIONADO</span><p>{longDate.format(currentDate)} · {items.length} encontro(s)</p></div>
+        {items.map((item) => <AgendaItem key={item.id} item={item} open={() => openMeeting(item)} />)}
+      </div>;
+    }) : <Empty text="Nenhum encontro sincronizado com o Calendar." />}</div>
   </div>;
 }
 
 function AgendaItem({ item, open }: { item: Meeting; open: () => void }) {
-  const start = new Date(item.startsAt); return <div className="agenda-item"><div className="date-block"><b>{time.format(start)}</b><small>{item.duration} min</small></div><div className={`agenda-accent ${item.type === "Grupo" ? "group" : ""}`} /><div className="agenda-copy"><span className={`type-badge ${item.type === "Grupo" ? "group" : ""}`}>{item.type}</span><h3>{item.title}</h3><p>{item.mentorIds.map((id) => mentor(id).name).join(" + ")}</p></div><a href={item.meetUrl} target="_blank"><Video size={17} /> Entrar</a><button className="secondary-button" onClick={open}><UserCheck size={17} /> Registrar participação</button></div>;
+  const start = new Date(item.startsAt);
+  return <div className="agenda-item"><div className="date-block"><b>{time.format(start)}</b><small>{item.duration} min</small></div><div className={`agenda-accent ${item.type === "Grupo" ? "group" : ""}`} /><div className="agenda-copy"><span className={`type-badge ${item.type === "Grupo" ? "group" : ""}`}>{item.type}</span><h3>{item.title}</h3><p>{item.front}</p></div><a href={item.meetUrl} target="_blank"><Video size={17} /> Entrar</a><button className="secondary-button" onClick={open}><UserCheck size={17} /> Registrar participação</button></div>;
 }
 
 function AchievementsView({ achievements, mentees, add }: { achievements: Achievement[]; mentees: Mentee[]; add: () => void }) {
@@ -208,6 +261,7 @@ function MenteeDrawer({ mentee, allMentees, achievements, close, update }: { men
   const [reason, setReason] = useState(mentee.riskReason);
   const [action, setAction] = useState(mentee.nextAction);
   const wins = achievements.filter((a) => a.menteeId === mentee.id);
+
   return <div className="modal-layer"><div className="modal-backdrop" onClick={close} /><aside className="drawer"><div className="drawer-top"><button className="back-button" onClick={close}><ArrowLeft size={18} /></button><span>Ficha do mentorado</span><button className="icon-button" onClick={close}><X size={19} /></button></div><div className="drawer-body"><div className="mentee-hero"><Avatar item={mentee} large /><div><h2>{mentee.name}</h2><p>{mentee.company} · {mentee.role}</p><StatusBadge status={mentee.status} /></div></div>
     <div className="detail-meta"><div><small>NA JORNADA DESDE</small><b>{date.format(new Date(mentee.joinedAt + "T12:00:00"))}</b></div><div><small>MENTOR PRINCIPAL</small><b>{mentor(mentee.mainMentorId).name}</b></div><div><small>ÚLTIMA PARTICIPAÇÃO</small><b>{date.format(new Date(mentee.lastParticipation + "T12:00:00"))}</b></div></div>
     <section className="detail-section"><span>BRIEFING DE ENTRADA</span><p>{mentee.briefing}</p></section>
@@ -220,21 +274,29 @@ function MenteeDrawer({ mentee, allMentees, achievements, close, update }: { men
 
 function AttendanceModal({ meeting, mentees, close, save }: { meeting: Meeting; mentees: Mentee[]; close: () => void; save: () => void }) {
   const [present, setPresent] = useState<string[]>(meeting.type === "Individual" ? meeting.menteeIds : []);
-  const [showAll, setShowAll] = useState(false);
   return <Modal title="Registrar participação" subtitle={meeting.title} close={close}><div className="meeting-summary"><CalendarDays size={18} /><div><b>{date.format(new Date(meeting.startsAt))} às {time.format(new Date(meeting.startsAt))}</b><small>{meeting.type} · {meeting.duration} minutos</small></div></div>{meeting.type === "Individual" ? <div className="attendance-person"><Avatar item={menteeById(meeting.menteeIds[0], mentees)} /><div><b>{menteeById(meeting.menteeIds[0], mentees).name}</b><small>Compareceu ao encontro?</small></div><div className="segmented"><button className={present.length ? "selected" : ""} onClick={() => setPresent(meeting.menteeIds)}>Sim</button><button className={!present.length ? "selected no" : ""} onClick={() => setPresent([])}>Não</button></div></div> : <div><label className="form-label">QUEM PARTICIPOU?</label><div className="participant-grid">{mentees.filter((m) => m.status === "Ativo").map((item) => <button key={item.id} className={present.includes(item.id) ? "checked" : ""} onClick={() => setPresent((list) => list.includes(item.id) ? list.filter((id) => id !== item.id) : [...list, item.id])}><span className="checkbox">{present.includes(item.id) && <Check size={13} />}</span><Avatar item={item} /><span>{item.name}</span></button>)}</div></div>}<div className="two-fields"><label>Nota de engajamento<select><option>Selecione</option><option>1 · Muito baixo</option><option>2 · Baixo</option><option>3 · Bom</option><option>4 · Alto</option><option>5 · Excelente</option></select></label>{meeting.type === "Individual" && <label>Nota de evolução<select><option>Selecione</option><option>1 · Muito baixa</option><option>2 · Baixa</option><option>3 · Boa</option><option>4 · Alta</option><option>5 · Excelente</option></select></label>}</div><label className="input-label">Observação rápida<textarea placeholder="Contexto importante, decisões ou próximos passos..." /></label><div className="modal-actions"><button className="ghost-button" onClick={close}>Cancelar</button><button className="primary-button" onClick={save}><Check size={17} /> Salvar participação</button></div></Modal>;
 }
 
 function NewMenteeModal({ close, save }: { close: () => void; save: (m: Mentee) => void }) {
-  const [name, setName] = useState(""); const [company, setCompany] = useState(""); const [briefing, setBriefing] = useState("");
-  return <Modal title="Novo mentorado" subtitle="Comece com o contexto essencial da jornada." close={close}><div className="two-fields"><label>Nome completo<input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex.: Lucas Almeida" autoFocus /></label><label>Empresa<input value={company} onChange={(e) => setCompany(e.target.value)} placeholder="Nome da empresa" /></label></div><div className="two-fields"><label>Data de entrada<input type="date" defaultValue="2026-06-30" /></label><label>Mentor principal<select value="unassigned" disabled><option value="unassigned">Não definido</option></select></label></div><label className="input-label">Briefing de entrada<textarea value={briefing} onChange={(e) => setBriefing(e.target.value)} placeholder="Objetivos, desafios e contexto importante..." /></label><div className="modal-actions"><button className="ghost-button" onClick={close}>Cancelar</button><button disabled={!name || !company} className="primary-button" onClick={() => save({ id: crypto.randomUUID(), name, company, role: "Cliente", initials: name.split(" ").map((n) => n[0]).slice(0,2).join("").toUpperCase(), joinedAt: "2026-06-30", mainMentorId: "unassigned", otherMentorIds: [], briefing, status: "Ativo", risk: "Baixo", riskReason: "", nextAction: "Realizar encontro de boas-vindas", lastParticipation: "2026-06-30", accent: "#7b8f85" })}><Plus size={17} /> Adicionar mentorado</button></div></Modal>;
+  const [name, setName] = useState("");
+  const [company, setCompany] = useState("");
+  const [briefing, setBriefing] = useState("");
+
+  return <Modal title="Novo mentorado" subtitle="Comece com o contexto essencial da jornada." close={close}><div className="two-fields"><label>Nome completo<input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex.: Lucas Almeida" autoFocus /></label><label>Empresa<input value={company} onChange={(e) => setCompany(e.target.value)} placeholder="Nome da empresa" /></label></div><div className="two-fields"><label>Data de entrada<input type="date" defaultValue="2026-06-30" /></label><label>Mentor principal<select value="unassigned" disabled><option value="unassigned">Não definido</option></select></label></div><label className="input-label">Briefing de entrada<textarea value={briefing} onChange={(e) => setBriefing(e.target.value)} placeholder="Objetivos, desafios e contexto importante..." /></label><div className="modal-actions"><button className="ghost-button" onClick={close}>Cancelar</button><button disabled={!name || !company} className="primary-button" onClick={() => save({ id: crypto.randomUUID(), name, company, role: "Cliente", initials: name.split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase(), joinedAt: "2026-06-30", mainMentorId: "unassigned", otherMentorIds: [], briefing, status: "Ativo", risk: "Baixo", riskReason: "", nextAction: "Realizar encontro de boas-vindas", lastParticipation: "2026-06-30", accent: "#7b8f85" })}><Plus size={17} /> Adicionar mentorado</button></div></Modal>;
 }
 
 function NewAchievementModal({ mentees, close, save }: { mentees: Mentee[]; close: () => void; save: (a: Achievement) => void }) {
-  const [menteeId, setMenteeId] = useState(mentees[0].id); const [title, setTitle] = useState(""); const [note, setNote] = useState("");
+  const [menteeId, setMenteeId] = useState(mentees[0].id);
+  const [title, setTitle] = useState("");
+  const [note, setNote] = useState("");
+
   return <Modal title="Registrar conquista" subtitle="Celebre um avanço importante da jornada." close={close}><label className="input-label">Mentorado<select value={menteeId} onChange={(e) => setMenteeId(e.target.value)}>{mentees.filter((m) => m.status === "Ativo").map((m) => <option value={m.id} key={m.id}>{m.name} · {m.company}</option>)}</select></label><label className="input-label">Conquista<input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Ex.: Primeiro mês com meta batida" autoFocus /></label><label className="input-label">Observação curta<textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Por que este marco importa?" /></label><div className="modal-actions"><button className="ghost-button" onClick={close}>Cancelar</button><button disabled={!title} className="primary-button" onClick={() => save({ id: crypto.randomUUID(), menteeId, date: "2026-06-30", title, note, icon: "trophy" })}><Trophy size={17} /> Registrar conquista</button></div></Modal>;
 }
 
-function Modal({ title, subtitle, close, children }: { title: string; subtitle: string; close: () => void; children: React.ReactNode }) { return <div className="modal-layer"><div className="modal-backdrop" onClick={close} /><div className="modal"><div className="modal-header"><div><h2>{title}</h2><p>{subtitle}</p></div><button className="icon-button" onClick={close}><X size={20} /></button></div><div className="modal-content">{children}</div></div></div>; }
+function Modal({ title, subtitle, close, children }: { title: string; subtitle: string; close: () => void; children: React.ReactNode }) {
+  return <div className="modal-layer"><div className="modal-backdrop" onClick={close} /><div className="modal"><div className="modal-header"><div><h2>{title}</h2><p>{subtitle}</p></div><button className="icon-button" onClick={close}><X size={20} /></button></div><div className="modal-content">{children}</div></div></div>;
+}
+
 function Avatar({ item, large }: { item: Mentee; large?: boolean }) { return <span className={`avatar mentee-avatar ${large ? "large" : ""}`} style={{ background: item.accent }}>{item.initials}</span>; }
 function RiskBadge({ risk }: { risk: Risk }) { return <span className={`risk-badge ${risk.toLowerCase().replace("é", "e")}`}><i />{risk}</span>; }
 function StatusBadge({ status }: { status: Mentee["status"] }) { return <span className={`status-badge ${status.toLowerCase()}`}><i />{status}</span>; }
