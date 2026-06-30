@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import pg from "pg";
-import { listWorkspaceEvents } from "@/lib/google-calendar";
+import { configuredCalendarSources, listWorkspaceEvents } from "@/lib/google-calendar";
+import { classifyMeetingFront, frontLabelToDb } from "@/lib/meeting-front";
 
 export const runtime = "nodejs";
 
@@ -41,11 +42,12 @@ export async function POST(request: NextRequest) {
         const company = normalized(mentee.company);
         return emailMatch || (name.length >= 4 && eventText.includes(name)) || (company.length >= 4 && eventText.includes(company));
       });
-      const ignoreByTitle = /(workshop\s+ae|reuni[aã]o\s+interna|daily\s+do\s+time|\balmo[cç]o\b|bloqueio\s+de\s+agenda|reuni[aã]o\s+comercial)/i.test(event.title);
+      const ignoreByTitle = /(workshop\s+ae|reuni[aã]o\s+interna|daily\s+do\s+time|\balmo[cç]o\b|bloqueio\s+de\s+agenda|reuni[aã]o\s+comercial|1:1\s*\|)/i.test(event.title);
       const groupByTitle = /(plant[aã]o\s+atacado\s+exponencial|mentoria\s+em\s+grupo|cl[ií]nica\s+de\s+vendas)/i.test(event.title);
       const menteeId = !ignoreByTitle && !groupByTitle && matches.length === 1 ? matches[0].id : null;
       if (ignoreByTitle || (!menteeId && !groupByTitle)) { ignored += 1; continue; }
       const type = menteeId ? "individual" : "group";
+      const front = frontLabelToDb(classifyMeetingFront(event.title, event.description));
       if (menteeId) individual += 1; else group += 1;
 
       await database.query("insert into current_calendar_sync_keys (calendar_id, event_id) values ($1, $2) on conflict do nothing", [event.calendarId, event.eventId]);
@@ -53,18 +55,19 @@ export async function POST(request: NextRequest) {
       await database.query(`
         insert into public.meetings (
           google_event_id, google_calendar_id, title, starts_at, ends_at,
-          meet_url, type, individual_mentee_id
-        ) values ($1, $2, $3, $4, $5, $6, $7::public.meeting_type, $8)
+          meet_url, type, front, individual_mentee_id
+        ) values ($1, $2, $3, $4, $5, $6, $7::public.meeting_type, $8::public.meeting_front, $9)
         on conflict (google_calendar_id, google_event_id) do update set
           title = excluded.title,
           starts_at = excluded.starts_at,
           ends_at = excluded.ends_at,
           meet_url = excluded.meet_url,
           type = excluded.type,
+          front = excluded.front,
           individual_mentee_id = excluded.individual_mentee_id
-      `, [event.eventId, event.calendarId, event.title, event.startsAt, event.endsAt, event.meetUrl, type, menteeId]);
+      `, [event.eventId, event.calendarId, event.title, event.startsAt, event.endsAt, event.meetUrl, type, front, menteeId]);
     }
-    const configuredCalendarIds = (process.env.GOOGLE_CALENDAR_IDS || "primary").split(",").map((id) => id.trim()).filter(Boolean);
+    const configuredCalendarIds = configuredCalendarSources().map((source) => source.sourceId);
     const removed = await database.query(`
       delete from public.meetings meeting
       where meeting.google_event_id is not null

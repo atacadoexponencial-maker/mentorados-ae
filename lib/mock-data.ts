@@ -17,11 +17,11 @@ export const mentees: Mentee[] = [
 ];
 
 export const meetings: Meeting[] = [
-  { id: "m1", title: "Mentoria individual · Ana Carolina", startsAt: "2026-06-30T10:30:00-03:00", duration: 60, meetUrl: "https://meet.google.com/abc-defg-hij", mentorIds: ["ma"], type: "Individual", menteeIds: ["ana"], attendanceRecorded: false },
-  { id: "m2", title: "Plantão de Estratégia", startsAt: "2026-06-30T15:00:00-03:00", duration: 90, meetUrl: "https://meet.google.com/str-ateg-ias", mentorIds: ["rc", "cs"], type: "Grupo", menteeIds: [], attendanceRecorded: false },
-  { id: "m3", title: "Mentoria individual · Diego Freitas", startsAt: "2026-07-01T09:00:00-03:00", duration: 60, meetUrl: "https://meet.google.com/die-goft-asd", mentorIds: ["ma"], type: "Individual", menteeIds: ["diego"], attendanceRecorded: false },
-  { id: "m4", title: "Clínica de Vendas", startsAt: "2026-07-02T14:00:00-03:00", duration: 60, meetUrl: "https://meet.google.com/cli-nicv-end", mentorIds: ["rc"], type: "Grupo", menteeIds: [], attendanceRecorded: false },
-  { id: "m5", title: "Mentoria individual · Carla Mendes", startsAt: "2026-07-03T11:00:00-03:00", duration: 60, meetUrl: "https://meet.google.com/car-lame-nds", mentorIds: ["cs"], type: "Individual", menteeIds: ["carla"], attendanceRecorded: false },
+  { id: "m1", title: "Mentoria individual · Ana Carolina", startsAt: "2026-06-30T10:30:00-03:00", duration: 60, meetUrl: "https://meet.google.com/abc-defg-hij", mentorIds: ["ma"], type: "Individual", front: "Estratégia", menteeIds: ["ana"], attendanceRecorded: false },
+  { id: "m2", title: "Plantão de Estratégia", startsAt: "2026-06-30T15:00:00-03:00", duration: 90, meetUrl: "https://meet.google.com/str-ateg-ias", mentorIds: ["rc", "cs"], type: "Grupo", front: "Estratégia", menteeIds: [], attendanceRecorded: false },
+  { id: "m3", title: "Mentoria individual · Diego Freitas", startsAt: "2026-07-01T09:00:00-03:00", duration: 60, meetUrl: "https://meet.google.com/die-goft-asd", mentorIds: ["ma"], type: "Individual", front: "Estratégia", menteeIds: ["diego"], attendanceRecorded: false },
+  { id: "m4", title: "Clínica de Vendas", startsAt: "2026-07-02T14:00:00-03:00", duration: 60, meetUrl: "https://meet.google.com/cli-nicv-end", mentorIds: ["rc"], type: "Grupo", front: "Comercial", menteeIds: [], attendanceRecorded: false },
+  { id: "m5", title: "Mentoria individual · Carla Mendes", startsAt: "2026-07-03T11:00:00-03:00", duration: 60, meetUrl: "https://meet.google.com/car-lame-nds", mentorIds: ["cs"], type: "Individual", front: "Estratégia", menteeIds: ["carla"], attendanceRecorded: false },
 ];
 
 export const achievements: Achievement[] = [

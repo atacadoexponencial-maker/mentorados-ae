@@ -1,4 +1,5 @@
 import type { Achievement, Meeting, Mentee, Risk } from "@/lib/types";
+import { frontDbToLabel } from "@/lib/meeting-front";
 import { getSupabaseBrowserClient } from "./client";
 import type { AchievementRow, MenteeRow, MeetingRow } from "./database.types";
 
@@ -44,9 +45,20 @@ function mapMeeting(row: MeetingRow, mentorIds: string[]): Meeting {
     meetUrl: row.meet_url || "#",
     mentorIds,
     type: row.type === "individual" ? "Individual" : "Grupo",
+    front: frontDbToLabel(row.front),
     menteeIds: row.individual_mentee_id ? [row.individual_mentee_id] : [],
     attendanceRecorded: Boolean(row.attendance_recorded_at),
   };
+}
+
+function meetingKey(meeting: Meeting) {
+  return [
+    meeting.title.trim().toLowerCase(),
+    meeting.startsAt,
+    meeting.duration,
+    meeting.type,
+    meeting.menteeIds.join(","),
+  ].join("|");
 }
 
 function mapAchievement(row: AchievementRow): Achievement {
@@ -75,9 +87,21 @@ export async function loadAppData() {
   const meetingLinks = (meetingMentorsResult.data ?? []) as Array<{ meeting_id: string; mentor_id: string }>;
   for (const link of meetingLinks) meetingMentors.set(link.meeting_id, [...(meetingMentors.get(link.meeting_id) ?? []), link.mentor_id]);
 
+  const dedupedMeetings = new Map<string, Meeting>();
+  for (const row of (meetingsResult.data ?? []) as MeetingRow[]) {
+    const meeting = mapMeeting(row, meetingMentors.get(row.id) ?? []);
+    const key = meetingKey(meeting);
+    const existing = dedupedMeetings.get(key);
+    if (!existing) {
+      dedupedMeetings.set(key, meeting);
+      continue;
+    }
+    existing.mentorIds = [...new Set([...existing.mentorIds, ...meeting.mentorIds])];
+  }
+
   return {
     mentees: ((menteesResult.data ?? []) as MenteeRow[]).map((row) => mapMentee(row, menteeMentors.get(row.id))),
-    meetings: ((meetingsResult.data ?? []) as MeetingRow[]).map((row) => mapMeeting(row, meetingMentors.get(row.id) ?? [])),
+    meetings: [...dedupedMeetings.values()].sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()),
     achievements: ((achievementsResult.data ?? []) as AchievementRow[]).map(mapAchievement),
   };
 }

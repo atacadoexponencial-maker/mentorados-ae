@@ -1,6 +1,7 @@
 export type Risk = "Baixo" | "Médio" | "Alto";
 export type MenteeStatus = "Ativo" | "Pausado" | "Encerrado";
 export type EventType = "Individual" | "Grupo";
+export type MeetingFront = "Tráfego" | "Redes sociais" | "Comercial" | "Estratégia";
 
 export interface Mentor {
   id: string;
@@ -40,6 +41,7 @@ export interface Meeting {
   meetUrl: string;
   mentorIds: string[];
   type: EventType;
+  front: MeetingFront;
   menteeIds: string[];
   attendanceRecorded: boolean;
 }
