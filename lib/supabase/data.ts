@@ -126,9 +126,9 @@ export async function createMentee(input: Mentee) {
     product: input.product ?? null,
     source_system: "manual",
     external_id: null,
-    instagram_url: null,
+    instagram_url: input.instagramUrl ?? null,
     media_plan_url: null,
-    folder_url: null,
+    folder_url: input.folderUrl ?? null,
     bonus: null,
     contract_end_at: null,
     source_data: {},
@@ -229,4 +229,60 @@ export async function markBriefingReviewed(menteeId: string): Promise<void> {
     const result = await response.json().catch(() => ({}));
     throw new Error(result.error || "Não foi possível marcar como revisado.");
   }
+}
+
+export interface ParticipationInput {
+  menteeId: string;
+  attended: boolean;
+  engagementScore: number | null;
+  evolutionScore: number | null;
+  note: string;
+}
+
+export async function saveParticipation(meetingId: string, entries: ParticipationInput[]): Promise<void> {
+  const response = await fetch(`/api/meetings/${meetingId}/participation`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await teamAuthHeader()) },
+    body: JSON.stringify({ entries }),
+  });
+  if (!response.ok) {
+    const result = await response.json().catch(() => ({}));
+    throw new Error(result.error || "Não foi possível salvar a participação.");
+  }
+}
+
+export interface MonthMeeting {
+  title: string;
+  startsAt: string;
+  type: "Individual" | "Grupo";
+}
+
+export async function loadMenteeMonthMeetings(menteeId: string): Promise<MonthMeeting[]> {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString();
+  const { data, error } = await getSupabaseBrowserClient()
+    .from("meeting_participations")
+    .select("meetings!inner(title, starts_at, type)")
+    .eq("mentee_id", menteeId)
+    .eq("attended", true)
+    .gte("meetings.starts_at", start)
+    .lt("meetings.starts_at", end);
+  assertNoError(error);
+  type JoinedMeeting = { title: string; starts_at: string; type: "individual" | "group" };
+  const rows = (data ?? []) as unknown as Array<{ meetings: JoinedMeeting | JoinedMeeting[] }>;
+  return rows
+    .map((row) => (Array.isArray(row.meetings) ? row.meetings[0] : row.meetings))
+    .filter((meeting): meeting is JoinedMeeting => Boolean(meeting))
+    .map((meeting) => ({ title: meeting.title, startsAt: meeting.starts_at, type: meeting.type === "individual" ? "Individual" as const : "Grupo" as const }))
+    .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
+}
+
+export async function updateMenteeContact(input: Mentee): Promise<Mentee> {
+  const { data, error } = await getSupabaseBrowserClient().from("mentees").update({
+    instagram_url: input.instagramUrl ?? null,
+    folder_url: input.folderUrl ?? null,
+  }).eq("id", input.id).select("*").single();
+  assertNoError(error);
+  return mapMentee(data as MenteeRow, input.otherMentorIds);
 }
