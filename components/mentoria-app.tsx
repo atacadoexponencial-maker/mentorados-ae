@@ -2,14 +2,15 @@
 
 import {
   AlertTriangle, ArrowLeft, Award, Bell, CalendarDays, Check,
-  ChevronRight, CircleHelp, Clock3, ExternalLink, Filter,
+  ChevronRight, CircleHelp, Clock3, Copy, ExternalLink, Filter, Link2,
   LayoutDashboard, LogOut, Medal, Menu, MoreHorizontal, Plus, RefreshCw, Search, Settings,
   Sparkles, Target, Trophy, UserCheck, Users, Video, X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { mentors } from "@/lib/mock-data";
-import { Achievement, Meeting, Mentee, Risk } from "@/lib/types";
-import { createAchievement, createMentee, loadAppData, syncGoogleCalendar, updateMenteeRisk } from "@/lib/supabase/data";
+import { Achievement, Meeting, Mentee, MenteeStatus, Risk } from "@/lib/types";
+import { briefingSections, briefingLabels } from "@/lib/briefing-schema";
+import { createAchievement, createMentee, generateBriefingLink, loadBriefing, markBriefingReviewed, loadAppData, syncGoogleCalendar, updateMenteeRisk, type MenteeBriefing } from "@/lib/supabase/data";
 
 type View = "dashboard" | "mentees" | "agenda" | "achievements";
 
@@ -37,6 +38,7 @@ export function MentoriaApp({ userEmail, onSignOut }: { userEmail: string; onSig
   const [syncingCalendar, setSyncingCalendar] = useState(false);
   const [search, setSearch] = useState("");
   const [riskFilter, setRiskFilter] = useState<"Todos" | Risk>("Todos");
+  const [statusFilter, setStatusFilter] = useState<"Todos" | MenteeStatus>("Ativo");
   const [selectedMentee, setSelectedMentee] = useState<Mentee | null>(null);
   const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
   const [modal, setModal] = useState<"mentee" | "achievement" | null>(null);
@@ -85,8 +87,8 @@ export function MentoriaApp({ userEmail, onSignOut }: { userEmail: string; onSig
   const filteredMentees = useMemo(() => menteeList.filter((item) => {
     const query = search.toLowerCase();
     const matches = item.name.toLowerCase().includes(query) || item.company.toLowerCase().includes(query);
-    return matches && (riskFilter === "Todos" || item.risk === riskFilter);
-  }), [menteeList, search, riskFilter]);
+    return matches && (riskFilter === "Todos" || item.risk === riskFilter) && (statusFilter === "Todos" || item.status === statusFilter);
+  }), [menteeList, search, riskFilter, statusFilter]);
 
   function navigate(next: View) {
     setView(next);
@@ -112,7 +114,7 @@ export function MentoriaApp({ userEmail, onSignOut }: { userEmail: string; onSig
           {dataError && <div className="data-error"><span>Não foi possível carregar o Supabase: {dataError}</span><button onClick={() => void refreshData()}><RefreshCw size={15} /> Tentar novamente</button></div>}
           {dataLoading ? <div className="data-loading"><RefreshCw size={22} /><p>Carregando sua carteira...</p></div> : <>
             {view === "dashboard" && <Dashboard active={active} atRisk={atRisk} absent={absent} mentees={menteeList} meetings={meetingList} achievements={achievementList} openMentee={setSelectedMentee} openMeeting={setSelectedMeeting} seeAll={navigate} newMentee={() => setModal("mentee")} />}
-            {view === "mentees" && <MenteesView list={filteredMentees} search={search} setSearch={setSearch} risk={riskFilter} setRisk={setRiskFilter} open={setSelectedMentee} add={() => setModal("mentee")} />}
+            {view === "mentees" && <MenteesView list={filteredMentees} search={search} setSearch={setSearch} risk={riskFilter} setRisk={setRiskFilter} status={statusFilter} setStatus={setStatusFilter} open={setSelectedMentee} add={() => setModal("mentee")} />}
             {view === "agenda" && <AgendaView meetings={meetingList} openMeeting={setSelectedMeeting} />}
             {view === "achievements" && <AchievementsView achievements={achievementList} mentees={menteeList} add={() => setModal("achievement")} />}
           </>}
@@ -190,9 +192,9 @@ function MeetingRow({ meeting, last, onClick }: { meeting: Meeting; last?: boole
   return <div className={`meeting-row ${last ? "last" : ""}`}><div className="meeting-time"><b>{time.format(start)}</b><small>{meeting.duration} min</small></div><div className="timeline-mark"><i /><span /></div><div className="meeting-info"><span className={`type-badge ${meeting.type === "Grupo" ? "group" : ""}`}>{meeting.type}</span><strong>{meeting.title.replace(/^.*· /, "")}</strong><small>{meeting.front}</small></div><a href={meeting.meetUrl} target="_blank" onClick={(e) => e.stopPropagation()}><Video size={16} /> Entrar no Meet</a><button className="more-button" onClick={onClick} aria-label="Registrar participação"><MoreHorizontal size={19} /></button></div>;
 }
 
-function MenteesView({ list, search, setSearch, risk, setRisk, open, add }: { list: Mentee[]; search: string; setSearch: (s: string) => void; risk: "Todos" | Risk; setRisk: (r: "Todos" | Risk) => void; open: (m: Mentee) => void; add: () => void }) {
+function MenteesView({ list, search, setSearch, risk, setRisk, status, setStatus, open, add }: { list: Mentee[]; search: string; setSearch: (s: string) => void; risk: "Todos" | Risk; setRisk: (r: "Todos" | Risk) => void; status: "Todos" | MenteeStatus; setStatus: (s: "Todos" | MenteeStatus) => void; open: (m: Mentee) => void; add: () => void }) {
   return <div className="full-page"><section className="section-heading"><div><p>CARTEIRA DE CLIENTES</p><h1>Mentorados</h1><h2>Contexto e acompanhamento de cada jornada.</h2></div><button className="primary-button" onClick={add}><Plus size={18} /> Novo mentorado</button></section>
-    <div className="toolbar"><label className="search"><Search size={18} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por nome ou empresa..." /></label><div className="filter"><Filter size={16} /><select value={risk} onChange={(e) => setRisk(e.target.value as "Todos" | Risk)}><option>Todos</option><option>Baixo</option><option>Médio</option><option>Alto</option></select></div></div>
+    <div className="toolbar"><label className="search"><Search size={18} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por nome ou empresa..." /></label><div className="filter"><Filter size={16} /><select aria-label="Filtrar por status" value={status} onChange={(e) => setStatus(e.target.value as "Todos" | MenteeStatus)}><option>Ativo</option><option>Pausado</option><option>Encerrado</option><option>Todos</option></select></div><div className="filter"><Filter size={16} /><select aria-label="Filtrar por risco" value={risk} onChange={(e) => setRisk(e.target.value as "Todos" | Risk)}><option>Todos</option><option>Baixo</option><option>Médio</option><option>Alto</option></select></div></div>
     <div className="table-card"><div className="table-row table-head"><span>MENTORADO</span><span>ÚLTIMA PARTICIPAÇÃO</span><span>RISCO</span><span>STATUS</span><span /></div>{list.map((item) => <button className="table-row" key={item.id} onClick={() => open(item)}><span className="person-cell"><Avatar item={item} /><span><b>{item.name}</b><small>{item.company} · {item.role}</small></span></span><span>{date.format(new Date(item.lastParticipation + "T12:00:00"))}</span><span><RiskBadge risk={item.risk} /></span><span><StatusBadge status={item.status} /></span><ChevronRight size={17} /></button>)}{!list.length && <Empty text="Nenhum mentorado encontrado." />}</div>
   </div>;
 }
@@ -266,6 +268,7 @@ function MenteeDrawer({ mentee, allMentees, achievements, close, update }: { men
     <div className="detail-meta"><div><small>NA JORNADA DESDE</small><b>{date.format(new Date(mentee.joinedAt + "T12:00:00"))}</b></div><div><small>MENTOR PRINCIPAL</small><b>{mentor(mentee.mainMentorId).name}</b></div><div><small>ÚLTIMA PARTICIPAÇÃO</small><b>{date.format(new Date(mentee.lastParticipation + "T12:00:00"))}</b></div></div>
     <section className="detail-section"><span>BRIEFING DE ENTRADA</span><p>{mentee.briefing}</p></section>
     <section className="detail-section"><div className="detail-title"><span>CONTATO E MATERIAIS</span></div><div className="resource-grid"><div><small>E-MAIL</small><b>{mentee.email || "Não informado"}</b></div><div><small>PRODUTO</small><b>{mentee.product || "Não informado"}</b></div>{mentee.instagramUrl && <a href={mentee.instagramUrl} target="_blank" rel="noreferrer">Instagram <ExternalLink size={13} /></a>}{mentee.folderUrl && <a href={mentee.folderUrl} target="_blank" rel="noreferrer">Pasta do cliente <ExternalLink size={13} /></a>}</div></section>
+    <MenteeBriefingPanel menteeId={mentee.id} />
     <section className="detail-section risk-section"><div className="detail-title"><span>SINALIZAÇÃO DE RISCO</span>{!editingRisk && <button onClick={() => setEditingRisk(true)}>Editar</button>}</div>{editingRisk ? <div className="risk-form"><label>Risco<select value={risk} onChange={(e) => setRisk(e.target.value as Risk)}><option>Baixo</option><option>Médio</option><option>Alto</option></select></label><label>Motivo<input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="O que está acontecendo?" /></label><label>Próxima ação<input value={action} onChange={(e) => setAction(e.target.value)} /></label><div><button className="ghost-button" onClick={() => setEditingRisk(false)}>Cancelar</button><button className="primary-button small" onClick={() => { update({ ...mentee, risk, riskReason: reason, nextAction: action }); setEditingRisk(false); }}>Salvar</button></div></div> : <div className="risk-detail"><RiskBadge risk={mentee.risk} /><div><small>MOTIVO</small><p>{mentee.riskReason || "Sem sinalizações no momento."}</p></div><div><small>PRÓXIMA AÇÃO</small><p>{mentee.nextAction}</p></div></div>}</section>
     <section className="detail-section"><div className="detail-title"><span>MENTORES COM CONTATO</span></div><div className="mentor-list">{[mentee.mainMentorId, ...mentee.otherMentorIds].map((id) => <div key={id}><span className="mini-avatar">{mentor(id).initials}</span><p><b>{mentor(id).name}</b><small>{mentor(id).contact}</small></p>{id === mentee.mainMentorId && <em>Principal</em>}</div>)}</div></section>
     <section className="detail-section"><div className="detail-title"><span>CONQUISTAS RECENTES</span></div>{wins.length ? wins.map((win) => <div className="mini-win" key={win.id}><Trophy size={16} /><span><b>{win.title}</b><small>{win.note}</small></span></div>) : <p className="muted">Nenhuma conquista registrada ainda.</p>}</section>
@@ -295,6 +298,82 @@ function NewAchievementModal({ mentees, close, save }: { mentees: Mentee[]; clos
 
 function Modal({ title, subtitle, close, children }: { title: string; subtitle: string; close: () => void; children: React.ReactNode }) {
   return <div className="modal-layer"><div className="modal-backdrop" onClick={close} /><div className="modal"><div className="modal-header"><div><h2>{title}</h2><p>{subtitle}</p></div><button className="icon-button" onClick={close}><X size={20} /></button></div><div className="modal-content">{children}</div></div></div>;
+}
+
+function MenteeBriefingPanel({ menteeId }: { menteeId: string }) {
+  const [briefing, setBriefing] = useState<MenteeBriefing | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    loadBriefing(menteeId)
+      .then((data) => { if (active) { setBriefing(data); setLoading(false); } })
+      .catch(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [menteeId]);
+
+  function flash(message: string) { setFeedback(message); window.setTimeout(() => setFeedback(""), 2200); }
+
+  const link = briefing?.token ? `${window.location.origin}/briefing/${briefing.token}` : "";
+
+  async function generate(regenerate: boolean) {
+    setBusy(true);
+    try {
+      const token = await generateBriefingLink(menteeId, regenerate);
+      setBriefing((current) => ({
+        status: current?.status ?? "pending",
+        importReviewPending: current?.importReviewPending ?? false,
+        filledAt: current?.filledAt ?? null,
+        answers: current?.answers ?? {},
+        token,
+      }));
+      flash(regenerate ? "Novo link gerado" : "Link gerado");
+    } catch { flash("Falha ao gerar o link"); } finally { setBusy(false); }
+  }
+
+  async function copy() {
+    if (!link) return;
+    try { await navigator.clipboard.writeText(link); flash("Link copiado"); } catch { flash("Não foi possível copiar"); }
+  }
+
+  async function review() {
+    setBusy(true);
+    try {
+      await markBriefingReviewed(menteeId);
+      setBriefing((current) => current ? { ...current, importReviewPending: false } : current);
+      flash("Marcado como revisado");
+    } catch { flash("Falha ao marcar"); } finally { setBusy(false); }
+  }
+
+  const answeredSections = briefing
+    ? briefingSections
+        .map((section) => ({ title: section.title, fields: section.fields.filter((field) => briefing.answers[field.key]) }))
+        .filter((section) => section.fields.length)
+    : [];
+
+  return <section className="detail-section">
+    <div className="detail-title"><span>BRIEFING</span>{briefing?.importReviewPending && <button onClick={review} disabled={busy}>Marcar revisado</button>}</div>
+    {loading ? <p className="muted">Carregando briefing...</p> : <>
+      <div className="briefing-status-row">
+        <span className={`status-badge ${briefing?.status === "filled" ? "" : "pausado"}`}><i />{briefing?.status === "filled" ? "Preenchido" : "Pendente"}</span>
+        {briefing?.filledAt && <small className="muted">em {date.format(new Date(briefing.filledAt))}</small>}
+        {briefing?.importReviewPending && <small className="review-flag">revisão pendente</small>}
+      </div>
+      <div className="briefing-link-box">
+        {link ? <>
+          <input readOnly value={link} onClick={(event) => event.currentTarget.select()} />
+          <button className="ghost-button" onClick={copy}><Copy size={14} /> Copiar</button>
+          <button className="ghost-button" onClick={() => generate(true)} disabled={busy} title="Gerar novo link e invalidar o atual"><RefreshCw size={14} /></button>
+        </> : <button className="secondary-button" onClick={() => generate(false)} disabled={busy}><Link2 size={15} /> Gerar link do mentorado</button>}
+      </div>
+      {feedback && <small className="briefing-feedback">{feedback}</small>}
+      {answeredSections.length ? <div className="briefing-answers">{answeredSections.map((section) => <div key={section.title}><h4>{section.title}</h4>{section.fields.map((field) => <div className="briefing-answer" key={field.key}><small>{briefingLabels[field.key]}</small><p>{briefing!.answers[field.key]}</p></div>)}</div>)}</div>
+        : <p className="muted">{briefing?.status === "filled" ? "Sem respostas registradas." : "O mentorado ainda não preencheu o briefing."}</p>}
+    </>}
+  </section>;
 }
 
 function Avatar({ item, large }: { item: Mentee; large?: boolean }) { return <span className={`avatar mentee-avatar ${large ? "large" : ""}`} style={{ background: item.accent }}>{item.initials}</span>; }
