@@ -85,27 +85,35 @@ html,body{background:#f4f1eb;color:#1f1f1f}
 .resource-grid>div{background:#eae6de}
 @media(max-width:760px){.main{margin-left:0}.page-heading h1,.section-heading h1{font-size:30px}.auth-copy h1{font-size:40px}.brand img{width:170px}}
 
-/* Briefing — tela pública */
-.briefing-public{max-width:760px;margin:0 auto;padding:48px 22px 80px}
+/* Briefing — tela pública (wizard por fases) */
+.briefing-public{max-width:640px;margin:0 auto;padding:44px 22px 90px}
 .briefing-state{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;padding:24px;color:#5f6a62}
 .briefing-state svg{color:#1f1f1f}
 .briefing-state h1{font:700 26px Manrope,sans-serif;margin:0}
-.briefing-state p{font-size:13px;color:#77736c;max-width:420px}
-.briefing-head{margin-bottom:30px}
+.briefing-state p{font-size:14px;color:#77736c;max-width:420px}
+.briefing-head{margin-bottom:20px}
 .briefing-head>span{font-size:10px;letter-spacing:2px;color:#b28b50;font-weight:600}
-.briefing-head h1{font:700 34px Manrope,sans-serif;letter-spacing:-1px;margin:12px 0 8px}
-.briefing-head p{font-size:13px;color:#6f7973;line-height:1.6;margin:0}
-.briefing-section{background:#fff;border:1px solid var(--line);border-radius:13px;padding:22px 24px;margin-bottom:16px}
-.briefing-section h2{font:600 15px Manrope,sans-serif;margin:0 0 16px;color:var(--green)}
-.briefing-section .input-label{display:block;margin-bottom:16px}
-.briefing-section .input-label:last-child{margin-bottom:0}
-.briefing-error{margin-bottom:14px}
-.briefing-actions{position:sticky;bottom:0;background:linear-gradient(transparent,var(--cream) 32%);padding:18px 0 4px;display:flex;justify-content:flex-end}
-.briefing-actions .primary-button{min-height:46px;padding:0 26px}
-.briefing-done{background:#fff;border:1px solid var(--line);border-radius:13px;padding:46px 30px;text-align:center}
-.briefing-done>span{width:54px;height:54px;border-radius:50%;display:inline-grid;place-items:center;background:#e3ebe5;color:var(--green);margin-bottom:16px}
-.briefing-done h2{font:700 22px Manrope,sans-serif;margin:0 0 8px}
-.briefing-done p{font-size:13px;color:#6f7973;line-height:1.6;max-width:440px;margin:0 auto 22px}
+.briefing-head h1{font:700 30px Manrope,sans-serif;letter-spacing:-1px;margin:10px 0 6px}
+.briefing-head p{font-size:14px;color:#6f7973;line-height:1.6;margin:0}
+.briefing-progress{height:6px;border-radius:999px;background:#e6e4db;overflow:hidden;margin-bottom:22px}
+.briefing-progress-bar{height:100%;border-radius:999px;background:var(--green);transition:width .45s cubic-bezier(.4,0,.2,1)}
+.briefing-section{background:#fff;border:1px solid var(--line);border-radius:14px;padding:26px 26px 24px;box-shadow:var(--shadow);animation:briefing-step .34s cubic-bezier(.2,.7,.3,1)}
+@keyframes briefing-step{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+.briefing-section h2{font:600 19px Manrope,sans-serif;margin:0 0 20px;color:var(--ink);letter-spacing:-.3px}
+.briefing-field{display:block;margin-bottom:22px}
+.briefing-field:last-child{margin-bottom:0}
+.briefing-field>span{display:block;font-size:15px;line-height:1.45;color:#28322c;font-weight:500;margin-bottom:9px}
+.briefing-field input,.briefing-field textarea{display:block;width:100%;border:1px solid #d7dad3;border-radius:10px;background:#fdfdfb;padding:12px 13px;font-size:14px;color:#1f1f1f;font-family:inherit;outline:none;transition:border-color .15s,box-shadow .15s}
+.briefing-field textarea{min-height:104px;resize:vertical;line-height:1.5}
+.briefing-field input:focus,.briefing-field textarea:focus{border-color:#729081;box-shadow:0 0 0 3px #e6ede8;background:#fff}
+.briefing-error{margin:16px 0 0}
+.briefing-nav{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:20px}
+.briefing-nav .ghost-button{min-height:46px;padding:0 18px;gap:6px}
+.briefing-nav .primary-button{min-height:46px;padding:0 26px;gap:6px;margin-left:auto}
+.briefing-done{background:#fff;border:1px solid var(--line);border-radius:14px;padding:52px 30px;text-align:center;box-shadow:var(--shadow)}
+.briefing-done>span{width:56px;height:56px;border-radius:50%;display:inline-grid;place-items:center;background:#e3ebe5;color:var(--green);margin-bottom:16px}
+.briefing-done h2{font:700 24px Manrope,sans-serif;margin:0 0 8px}
+.briefing-done p{font-size:14px;color:#6f7973;line-height:1.6;max-width:440px;margin:0 auto 22px}
 
 /* Briefing — painel na ficha interna */
 .briefing-status-row{display:flex;align-items:center;gap:10px;margin:12px 0 10px;flex-wrap:wrap}
