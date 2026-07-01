@@ -84,3 +84,39 @@ html,body{background:#f4f1eb;color:#1f1f1f}
 .auth-error{background:#fee1e1;color:#a33f3f}
 .resource-grid>div{background:#eae6de}
 @media(max-width:760px){.main{margin-left:0}.page-heading h1,.section-heading h1{font-size:30px}.auth-copy h1{font-size:40px}.brand img{width:170px}}
+
+/* Briefing — tela pública */
+.briefing-public{max-width:760px;margin:0 auto;padding:48px 22px 80px}
+.briefing-state{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;padding:24px;color:#5f6a62}
+.briefing-state svg{color:#1f1f1f}
+.briefing-state h1{font:700 26px Manrope,sans-serif;margin:0}
+.briefing-state p{font-size:13px;color:#77736c;max-width:420px}
+.briefing-head{margin-bottom:30px}
+.briefing-head>span{font-size:10px;letter-spacing:2px;color:#b28b50;font-weight:600}
+.briefing-head h1{font:700 34px Manrope,sans-serif;letter-spacing:-1px;margin:12px 0 8px}
+.briefing-head p{font-size:13px;color:#6f7973;line-height:1.6;margin:0}
+.briefing-section{background:#fff;border:1px solid var(--line);border-radius:13px;padding:22px 24px;margin-bottom:16px}
+.briefing-section h2{font:600 15px Manrope,sans-serif;margin:0 0 16px;color:var(--green)}
+.briefing-section .input-label{display:block;margin-bottom:16px}
+.briefing-section .input-label:last-child{margin-bottom:0}
+.briefing-error{margin-bottom:14px}
+.briefing-actions{position:sticky;bottom:0;background:linear-gradient(transparent,var(--cream) 32%);padding:18px 0 4px;display:flex;justify-content:flex-end}
+.briefing-actions .primary-button{min-height:46px;padding:0 26px}
+.briefing-done{background:#fff;border:1px solid var(--line);border-radius:13px;padding:46px 30px;text-align:center}
+.briefing-done>span{width:54px;height:54px;border-radius:50%;display:inline-grid;place-items:center;background:#e3ebe5;color:var(--green);margin-bottom:16px}
+.briefing-done h2{font:700 22px Manrope,sans-serif;margin:0 0 8px}
+.briefing-done p{font-size:13px;color:#6f7973;line-height:1.6;max-width:440px;margin:0 auto 22px}
+
+/* Briefing — painel na ficha interna */
+.briefing-status-row{display:flex;align-items:center;gap:10px;margin:12px 0 10px;flex-wrap:wrap}
+.review-flag{font-size:8px;letter-spacing:.5px;background:#f1e8df;color:#956f52;border-radius:10px;padding:3px 8px}
+.briefing-link-box{display:flex;align-items:center;gap:7px;margin-bottom:6px}
+.briefing-link-box input{flex:1;min-width:0;height:36px;border:1px solid #dedfd9;border-radius:7px;background:#fff;padding:0 10px;font-size:10px;color:#5f6a62;outline:none}
+.briefing-link-box .ghost-button{min-height:36px;padding:0 11px;font-size:10px;gap:5px}
+.briefing-feedback{display:block;color:#557565;font-size:9px;margin-bottom:8px}
+.briefing-answers{margin-top:14px}
+.briefing-answers>div{margin-bottom:14px}
+.briefing-answers h4{font:600 9px Manrope,sans-serif;letter-spacing:1px;color:#9a8c70;text-transform:uppercase;margin:0 0 8px}
+.briefing-answer{margin-bottom:9px}
+.briefing-answer small{display:block;font-size:9px;color:#939991;margin-bottom:3px}
+.briefing-answer p{font-size:11px;color:#5a635c;line-height:1.5;margin:0;white-space:pre-wrap}

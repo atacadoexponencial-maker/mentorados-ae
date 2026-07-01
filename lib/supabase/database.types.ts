@@ -10,10 +10,11 @@ export interface Database {
       meeting_mentors: { Row: { meeting_id: string; mentor_id: string }; Insert: { meeting_id: string; mentor_id: string }; Update: never; Relationships: [] };
       meeting_participations: { Row: ParticipationRow; Insert: Omit<ParticipationRow, "id" | "created_at" | "updated_at"> & { id?: string; created_at?: string; updated_at?: string }; Update: Partial<Database["public"]["Tables"]["meeting_participations"]["Insert"]>; Relationships: [] };
       achievements: { Row: AchievementRow; Insert: Omit<AchievementRow, "id" | "created_at" | "updated_at"> & { id?: string; created_at?: string; updated_at?: string }; Update: Partial<Database["public"]["Tables"]["achievements"]["Insert"]>; Relationships: [] };
+      mentee_briefing: { Row: BriefingRow; Insert: Omit<BriefingRow, "id" | "created_at" | "updated_at"> & { id?: string; created_at?: string; updated_at?: string }; Update: Partial<Database["public"]["Tables"]["mentee_briefing"]["Insert"]>; Relationships: [] };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
-    Enums: { mentee_status: "active" | "paused" | "closed"; risk_level: "low" | "medium" | "high"; meeting_type: "individual" | "group"; meeting_front: "trafego" | "redes_sociais" | "comercial" | "estrategia" };
+    Enums: { mentee_status: "active" | "paused" | "closed"; risk_level: "low" | "medium" | "high"; meeting_type: "individual" | "group"; meeting_front: "trafego" | "redes_sociais" | "comercial" | "estrategia"; briefing_status: "pending" | "filled" };
     CompositeTypes: Record<string, never>;
   };
 }
@@ -23,3 +24,41 @@ export interface MenteeRow { id: string; name: string; company: string; role: st
 export interface MeetingRow { id: string; google_event_id: string | null; google_calendar_id: string | null; title: string; starts_at: string; ends_at: string; meet_url: string | null; type: "individual" | "group"; front: "trafego" | "redes_sociais" | "comercial" | "estrategia"; individual_mentee_id: string | null; attendance_recorded_at: string | null; general_note: string; created_at: string; updated_at: string }
 export interface ParticipationRow { id: string; meeting_id: string; mentee_id: string; attended: boolean; engagement_score: number | null; evolution_score: number | null; note: string; recorded_by: string | null; created_at: string; updated_at: string }
 export interface AchievementRow { id: string; mentee_id: string; achieved_at: string; title: string; note: string; created_by: string | null; created_at: string; updated_at: string }
+export interface BriefingRow {
+  id: string;
+  mentee_id: string;
+  access_token: string | null;
+  status: "pending" | "filled";
+  import_review_pending: boolean;
+  filled_at: string | null;
+  brand_name: string | null;
+  niche: string | null;
+  founding_year: string | null;
+  location: string | null;
+  physical_stores: string | null;
+  business_type: string | null;
+  employees_count: string | null;
+  marketing_team: string | null;
+  sales_team: string | null;
+  company_history: string | null;
+  main_sales_channel: string | null;
+  online_channels: string | null;
+  first_purchase_policy: string | null;
+  formality_policy: string | null;
+  ideal_customer_profiles: string | null;
+  primary_customer_profile: string | null;
+  recurring_customers_avg: string | null;
+  new_customers_avg: string | null;
+  repurchase_behavior: string | null;
+  base_sales_actions: string | null;
+  new_sales_actions: string | null;
+  collection_frequency: string | null;
+  launch_strategy: string | null;
+  marketing_difficulty: string | null;
+  paid_traffic: string | null;
+  whatsapp_leads_group: string | null;
+  whatsapp_customers_group: string | null;
+  acquisition_funnels: string | null;
+  created_at: string;
+  updated_at: string;
+}

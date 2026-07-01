@@ -1,7 +1,8 @@
 import type { Achievement, Meeting, Mentee, Risk } from "@/lib/types";
 import { frontDbToLabel } from "@/lib/meeting-front";
+import { briefingFieldKeys } from "@/lib/briefing-schema";
 import { getSupabaseBrowserClient } from "./client";
-import type { AchievementRow, MenteeRow, MeetingRow } from "./database.types";
+import type { AchievementRow, BriefingRow, MenteeRow, MeetingRow } from "./database.types";
 
 const statusFromDb = { active: "Ativo", paused: "Pausado", closed: "Encerrado" } as const;
 const statusToDb = { Ativo: "active", Pausado: "paused", Encerrado: "closed" } as const;
@@ -169,4 +170,63 @@ export async function syncGoogleCalendar() {
   const result = await response.json();
   if (!response.ok) throw new Error(result.error || "Não foi possível sincronizar o Calendar.");
   return result as { synced: number; individual: number; group: number };
+}
+
+export interface MenteeBriefing {
+  status: "pending" | "filled";
+  importReviewPending: boolean;
+  filledAt: string | null;
+  token: string | null;
+  answers: Record<string, string>;
+}
+
+export async function loadBriefing(menteeId: string): Promise<MenteeBriefing | null> {
+  const { data, error } = await getSupabaseBrowserClient()
+    .from("mentee_briefing")
+    .select("*")
+    .eq("mentee_id", menteeId)
+    .maybeSingle();
+  assertNoError(error);
+  if (!data) return null;
+  const row = data as BriefingRow;
+  const answers: Record<string, string> = {};
+  for (const key of briefingFieldKeys) {
+    const value = row[key as keyof BriefingRow];
+    if (typeof value === "string" && value.trim()) answers[key] = value;
+  }
+  return {
+    status: row.status,
+    importReviewPending: row.import_review_pending,
+    filledAt: row.filled_at,
+    token: row.access_token,
+    answers,
+  };
+}
+
+async function teamAuthHeader() {
+  const { data } = await getSupabaseBrowserClient().auth.getSession();
+  if (!data.session?.access_token) throw new Error("Sessão expirada.");
+  return { Authorization: `Bearer ${data.session.access_token}` };
+}
+
+export async function generateBriefingLink(menteeId: string, regenerate = false): Promise<string> {
+  const response = await fetch(`/api/mentees/${menteeId}/briefing`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await teamAuthHeader()) },
+    body: JSON.stringify({ regenerate }),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || "Não foi possível gerar o link.");
+  return result.token as string;
+}
+
+export async function markBriefingReviewed(menteeId: string): Promise<void> {
+  const response = await fetch(`/api/mentees/${menteeId}/briefing`, {
+    method: "PATCH",
+    headers: { ...(await teamAuthHeader()) },
+  });
+  if (!response.ok) {
+    const result = await response.json().catch(() => ({}));
+    throw new Error(result.error || "Não foi possível marcar como revisado.");
+  }
 }
