@@ -7,8 +7,7 @@ import {
   Sparkles, Target, Trophy, UserCheck, Users, Video, X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { mentors } from "@/lib/mock-data";
-import { Achievement, Meeting, Mentee, MenteeStatus, Risk } from "@/lib/types";
+import { Achievement, Meeting, Mentee, MenteeStatus, Mentor, Risk } from "@/lib/types";
 import { briefingSections, briefingLabels } from "@/lib/briefing-schema";
 import { createAchievement, createMentee, generateBriefingLink, loadBriefing, loadMenteeMonthMeetings, markBriefingReviewed, loadAppData, saveParticipation, syncGoogleCalendar, updateMenteeContact, updateMenteeRisk, type MenteeBriefing, type MonthMeeting } from "@/lib/supabase/data";
 
@@ -18,18 +17,21 @@ const date = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short" }
 const longDate = new Intl.DateTimeFormat("pt-BR", { weekday: "long", day: "2-digit", month: "long" });
 const time = new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" });
 const weekdayShort = new Intl.DateTimeFormat("pt-BR", { weekday: "short" });
+const dayMonthLong = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "long" });
 const meetingDateKeyFormatter = new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" });
 
 function meetingDayKey(value: string) {
   return meetingDateKeyFormatter.format(new Date(value));
 }
 
-const unassignedMentor = { id: "unassigned", name: "Não definido", initials: "—", color: "#89928c", contact: "" };
-function mentor(id: string) { return mentors.find((item) => item.id === id) ?? unassignedMentor; }
+const unassignedMentor: Mentor = { id: "unassigned", name: "Não definido", initials: "—", color: "#89928c", contact: "" };
+function mentorById(id: string, list: Mentor[]) { return list.find((item) => item.id === id) ?? unassignedMentor; }
 function menteeById(id: string, list: Mentee[]) { return list.find((item) => item.id === id)!; }
+function todayDateKey() { return meetingDateKeyFormatter.format(new Date()); }
 
 export function MentoriaApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: () => Promise<void> }) {
   const [view, setView] = useState<View>("dashboard");
+  const [mentorList, setMentorList] = useState<Mentor[]>([]);
   const [menteeList, setMenteeList] = useState<Mentee[]>([]);
   const [meetingList, setMeetingList] = useState<Meeting[]>([]);
   const [achievementList, setAchievementList] = useState<Achievement[]>([]);
@@ -51,6 +53,7 @@ export function MentoriaApp({ userEmail, onSignOut }: { userEmail: string; onSig
     setDataError("");
     try {
       const data = await loadAppData();
+      setMentorList(data.mentors);
       setMenteeList(data.mentees);
       setMeetingList(data.meetings);
       setAchievementList(data.achievements);
@@ -83,7 +86,7 @@ export function MentoriaApp({ userEmail, onSignOut }: { userEmail: string; onSig
 
   const active = menteeList.filter((item) => item.status === "Ativo");
   const atRisk = active.filter((item) => item.risk !== "Baixo");
-  const absent = active.filter((item) => new Date("2026-06-30").getTime() - new Date(item.lastParticipation).getTime() > 14 * 86400000);
+  const absent = active.filter((item) => Date.now() - new Date(item.lastParticipation).getTime() > 14 * 86400000);
 
   const filteredMentees = useMemo(() => {
     const query = search.toLowerCase();
@@ -132,7 +135,7 @@ export function MentoriaApp({ userEmail, onSignOut }: { userEmail: string; onSig
         </div>
       </main>
 
-      {selectedMentee && <MenteeDrawer mentee={selectedMentee} allMentees={menteeList} achievements={achievementList} close={() => setSelectedMentee(null)} update={async (updated) => { try { const saved = await updateMenteeRisk(updated); setMenteeList((items) => items.map((i) => i.id === saved.id ? saved : i)); setSelectedMentee(saved); notify("Ficha atualizada com sucesso"); } catch { notify("Não foi possível atualizar a ficha"); } }} updateContact={async (updated) => { try { const saved = await updateMenteeContact(updated); setMenteeList((items) => items.map((i) => i.id === saved.id ? saved : i)); setSelectedMentee(saved); notify("Contato atualizado"); } catch { notify("Não foi possível atualizar o contato"); } }} />}
+      {selectedMentee && <MenteeDrawer mentee={selectedMentee} mentors={mentorList} allMentees={menteeList} achievements={achievementList} close={() => setSelectedMentee(null)} update={async (updated) => { try { const saved = await updateMenteeRisk(updated); setMenteeList((items) => items.map((i) => i.id === saved.id ? saved : i)); setSelectedMentee(saved); notify("Ficha atualizada com sucesso"); } catch { notify("Não foi possível atualizar a ficha"); } }} updateContact={async (updated) => { try { const saved = await updateMenteeContact(updated); setMenteeList((items) => items.map((i) => i.id === saved.id ? saved : i)); setSelectedMentee(saved); notify("Contato atualizado"); } catch { notify("Não foi possível atualizar o contato"); } }} />}
       {selectedMeeting && <AttendanceModal meeting={selectedMeeting} mentees={menteeList} close={() => setSelectedMeeting(null)} onSaved={() => { setSelectedMeeting(null); notify("Participação registrada com sucesso"); void refreshData(); }} />}
       {modal === "mentee" && <NewMenteeModal close={() => setModal(null)} save={async (item) => { try { const saved = await createMentee(item); setMenteeList((list) => [saved, ...list]); setModal(null); notify("Mentorado adicionado com sucesso"); } catch { notify("Não foi possível adicionar o mentorado"); } }} />}
       {modal === "achievement" && <NewAchievementModal mentees={menteeList} close={() => setModal(null)} save={async (item) => { try { const saved = await createAchievement(item); setAchievementList((list) => [saved, ...list]); setModal(null); notify("Conquista registrada ✨"); } catch { notify("Não foi possível registrar a conquista"); } }} />}
@@ -160,18 +163,22 @@ function Sidebar({ view, navigate, count, open, close, syncing, onSync }: { view
 }
 
 function Dashboard({ active, atRisk, absent, mentees, meetings, achievements, openMentee, openMeeting, seeAll, newMentee }: { active: Mentee[]; atRisk: Mentee[]; absent: Mentee[]; mentees: Mentee[]; meetings: Meeting[]; achievements: Achievement[]; openMentee: (m: Mentee) => void; openMeeting: (m: Meeting) => void; seeAll: (v: View) => void; newMentee: () => void }) {
+  const highRisk = atRisk.filter((item) => item.risk === "Alto");
+  const todayKey = todayDateKey();
+  const todayMeetings = meetings.filter((meeting) => meetingDayKey(meeting.startsAt) === todayKey);
+  const upcomingMeetings = meetings.filter((meeting) => new Date(meeting.startsAt).getTime() >= Date.now());
   return <>
-    <section className="page-heading"><div><p>OPERAÇÃO · 30 DE JUNHO</p><h1>Visão geral <span>↗</span></h1><h2>Clientes avançando. Time no controle.</h2></div><button className="primary-button" onClick={newMentee}><Plus size={18} /> Novo mentorado</button></section>
+    <section className="page-heading"><div><p>OPERAÇÃO · {dayMonthLong.format(new Date()).toUpperCase()}</p><h1>Visão geral <span>↗</span></h1><h2>Clientes avançando. Time no controle.</h2></div><button className="primary-button" onClick={newMentee}><Plus size={18} /> Novo mentorado</button></section>
     <section className="metrics">
       <Metric icon={Users} tone="green" label="Mentorados ativos" value={active.length.toString()} note="na jornada agora" onClick={() => seeAll("mentees")} />
-      <Metric icon={CalendarDays} tone="gold" label="Próximos encontros" value={meetings.length.toString()} note="na agenda sincronizada" onClick={() => seeAll("agenda")} />
-      <Metric icon={AlertTriangle} tone="red" label="Precisam de atenção" value={atRisk.length.toString()} note="1 em risco alto" onClick={() => seeAll("mentees")} />
+      <Metric icon={CalendarDays} tone="gold" label="Próximos encontros" value={upcomingMeetings.length.toString()} note="na agenda sincronizada" onClick={() => seeAll("agenda")} />
+      <Metric icon={AlertTriangle} tone="red" label="Precisam de atenção" value={atRisk.length.toString()} note={`${highRisk.length} em risco alto`} onClick={() => seeAll("mentees")} />
       <Metric icon={Clock3} tone="blue" label="Sem participação" value={absent.length.toString()} note="há mais de 14 dias" onClick={() => seeAll("mentees")} />
     </section>
     <section className="dashboard-grid">
       <div className="card agenda-card">
         <CardTitle eyebrow="PRÓXIMOS ENCONTROS" title="Agenda de hoje" action="Ver agenda completa" onClick={() => seeAll("agenda")} />
-        {meetings.length ? <div className="timeline">{meetings.slice(0, 3).map((meeting, index) => <MeetingRow key={meeting.id} meeting={meeting} last={index === Math.min(meetings.length, 3) - 1} onClick={() => openMeeting(meeting)} />)}</div> : <Empty text="Nenhum encontro sincronizado ainda." />}
+        {todayMeetings.length ? <div className="timeline">{todayMeetings.slice(0, 3).map((meeting, index) => <MeetingRow key={meeting.id} meeting={meeting} last={index === Math.min(todayMeetings.length, 3) - 1} onClick={() => openMeeting(meeting)} />)}</div> : <Empty text="Nenhum encontro na agenda de hoje." />}
       </div>
       <div className="card attention-card">
         <CardTitle eyebrow="OLHAR ATENTO" title="Clientes em risco" action="Ver todos" onClick={() => seeAll("mentees")} />
@@ -179,7 +186,7 @@ function Dashboard({ active, atRisk, absent, mentees, meetings, achievements, op
       </div>
       <div className="card absent-card">
         <CardTitle eyebrow="RECONECTAR" title="Sem participação recente" action="Ver todos" onClick={() => seeAll("mentees")} />
-        {absent.length ? absent.map((item) => <button className="absent-person" key={item.id} onClick={() => openMentee(item)}><Avatar item={item} /><div><strong>{item.name}</strong><small>Última participação em {date.format(new Date(item.lastParticipation + "T12:00:00"))}</small></div><span>{Math.floor((new Date("2026-06-30").getTime() - new Date(item.lastParticipation).getTime()) / 86400000)} dias</span></button>) : <Empty text="Todo mundo está por perto." />}
+        {absent.length ? absent.map((item) => <button className="absent-person" key={item.id} onClick={() => openMentee(item)}><Avatar item={item} /><div><strong>{item.name}</strong><small>Última participação em {date.format(new Date(item.lastParticipation + "T12:00:00"))}</small></div><span>{Math.floor((Date.now() - new Date(item.lastParticipation).getTime()) / 86400000)} dias</span></button>) : <Empty text="Todo mundo está por perto." />}
       </div>
       <div className="card wins-card">
         <CardTitle eyebrow="BOAS NOTÍCIAS" title="Conquistas recentes" action="Ver todas" onClick={() => seeAll("achievements")} />
@@ -281,7 +288,8 @@ function AchievementsView({ achievements, mentees, add }: { achievements: Achiev
   return <div className="full-page"><section className="section-heading"><div><p>EVOLUÇÃO REAL</p><h1>Conquistas</h1><h2>Os marcos que fazem a jornada valer a pena.</h2></div><button className="primary-button" onClick={add}><Plus size={18} /> Registrar conquista</button></section><div className="achievement-hero"><div><Medal size={26} /><span><b>{achievements.length} conquistas</b><small>registradas neste ciclo</small></span></div><Sparkles size={80} /></div><div className="achievement-grid">{achievements.map((item) => { const person = menteeById(item.menteeId, mentees); const Icon = item.icon === "trophy" ? Trophy : item.icon === "target" ? Target : Sparkles; return <article className="achievement-card" key={item.id}><div className="achievement-top"><span><Icon size={21} /></span><small>{date.format(new Date(item.date + "T12:00:00"))}</small></div><h3>{item.title}</h3><p>{item.note}</p><div><Avatar item={person} /><span><b>{person.name}</b><small>{person.company}</small></span></div></article>; })}</div></div>;
 }
 
-function MenteeDrawer({ mentee, allMentees, achievements, close, update, updateContact }: { mentee: Mentee; allMentees: Mentee[]; achievements: Achievement[]; close: () => void; update: (m: Mentee) => void; updateContact: (m: Mentee) => void }) {
+function MenteeDrawer({ mentee, mentors, allMentees, achievements, close, update, updateContact }: { mentee: Mentee; mentors: Mentor[]; allMentees: Mentee[]; achievements: Achievement[]; close: () => void; update: (m: Mentee) => void; updateContact: (m: Mentee) => void }) {
+  const mentor = (id: string) => mentorById(id, mentors);
   const [editingRisk, setEditingRisk] = useState(false);
   const [risk, setRisk] = useState(mentee.risk);
   const [reason, setReason] = useState(mentee.riskReason);
@@ -344,7 +352,7 @@ function AttendanceModal({ meeting, mentees, close, onSaved }: { meeting: Meetin
 }
 
 function NewMenteeModal({ close, save }: { close: () => void; save: (m: Mentee) => void }) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayDateKey();
   const [name, setName] = useState("");
   const [company, setCompany] = useState("");
   const [joinedAt, setJoinedAt] = useState(today);
@@ -356,11 +364,16 @@ function NewMenteeModal({ close, save }: { close: () => void; save: (m: Mentee) 
 }
 
 function NewAchievementModal({ mentees, close, save }: { mentees: Mentee[]; close: () => void; save: (a: Achievement) => void }) {
-  const [menteeId, setMenteeId] = useState(mentees[0].id);
+  const activeMentees = mentees.filter((m) => m.status === "Ativo");
+  const [menteeId, setMenteeId] = useState(activeMentees[0]?.id ?? "");
   const [title, setTitle] = useState("");
   const [note, setNote] = useState("");
 
-  return <Modal title="Registrar conquista" subtitle="Celebre um avanço importante da jornada." close={close}><label className="input-label">Mentorado<select value={menteeId} onChange={(e) => setMenteeId(e.target.value)}>{mentees.filter((m) => m.status === "Ativo").map((m) => <option value={m.id} key={m.id}>{m.name} · {m.company}</option>)}</select></label><label className="input-label">Conquista<input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Ex.: Primeiro mês com meta batida" autoFocus /></label><label className="input-label">Observação curta<textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Por que este marco importa?" /></label><div className="modal-actions"><button className="ghost-button" onClick={close}>Cancelar</button><button disabled={!title} className="primary-button" onClick={() => save({ id: crypto.randomUUID(), menteeId, date: "2026-06-30", title, note, icon: "trophy" })}><Trophy size={17} /> Registrar conquista</button></div></Modal>;
+  if (!activeMentees.length) {
+    return <Modal title="Registrar conquista" subtitle="Celebre um avanço importante da jornada." close={close}><Empty text="Cadastre um mentorado ativo para registrar conquistas." /><div className="modal-actions"><button className="ghost-button" onClick={close}>Fechar</button></div></Modal>;
+  }
+
+  return <Modal title="Registrar conquista" subtitle="Celebre um avanço importante da jornada." close={close}><label className="input-label">Mentorado<select value={menteeId} onChange={(e) => setMenteeId(e.target.value)}>{activeMentees.map((m) => <option value={m.id} key={m.id}>{m.name} · {m.company}</option>)}</select></label><label className="input-label">Conquista<input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Ex.: Primeiro mês com meta batida" autoFocus /></label><label className="input-label">Observação curta<textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Por que este marco importa?" /></label><div className="modal-actions"><button className="ghost-button" onClick={close}>Cancelar</button><button disabled={!title || !menteeId} className="primary-button" onClick={() => save({ id: crypto.randomUUID(), menteeId, date: todayDateKey(), title, note, icon: "trophy" })}><Trophy size={17} /> Registrar conquista</button></div></Modal>;
 }
 
 function Modal({ title, subtitle, close, children }: { title: string; subtitle: string; close: () => void; children: React.ReactNode }) {

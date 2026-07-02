@@ -42,8 +42,9 @@ html,body{background:#f4f1eb;color:#1f1f1f}
 .metric-icon.green,.metric-icon.blue{background:#e8e4dc;color:#1f1f1f}
 .metric-icon.gold{background:#f4e7bd;color:#8d6700}
 .metric-icon.red{background:#fee3e3;color:#bc4f4f}
-.metric small{color:#77736c;text-transform:uppercase;letter-spacing:.7px;font-size:8px}
-.metric strong{font-size:27px}
+.metric small{display:block;color:#77736c;text-transform:uppercase;letter-spacing:.7px;font-size:9px}
+.metric strong{display:block;font-size:30px;line-height:1.05;margin:7px 0 5px}
+.metric p{display:block;font-size:11px;color:#8a857c;margin:0}
 .card{background:rgba(255,255,255,.58);border-color:#dcd7cd;border-radius:18px;padding:24px}
 .card-title span{color:#77736c;letter-spacing:2px}
 .card-title h3{font-size:18px;letter-spacing:-.3px}
@@ -83,7 +84,7 @@ html,body{background:#f4f1eb;color:#1f1f1f}
 .auth-submit{height:51px;margin-top:13px}
 .auth-error{background:#fee1e1;color:#a33f3f}
 .resource-grid>div{background:#eae6de}
-@media(max-width:760px){.main{margin-left:0}.page-heading h1,.section-heading h1{font-size:30px}.auth-copy h1{font-size:40px}.brand img{width:170px}}
+@media(max-width:760px){.main{margin-left:0}.page-heading h1,.section-heading h1{font-size:30px}.auth-copy h1{font-size:40px}.brand img{width:170px}.metric strong{font-size:23px;margin:5px 0 0}}
 
 /* Briefing — tela pública (wizard por fases) */
 .briefing-public{max-width:640px;margin:0 auto;padding:44px 22px 90px}
