@@ -1,8 +1,8 @@
-import type { Achievement, Meeting, Mentee, Risk } from "@/lib/types";
+import type { Achievement, Meeting, Mentee, Mentor, Risk } from "@/lib/types";
 import { frontDbToLabel } from "@/lib/meeting-front";
 import { briefingFieldKeys } from "@/lib/briefing-schema";
 import { getSupabaseBrowserClient } from "./client";
-import type { AchievementRow, BriefingRow, MenteeRow, MeetingRow } from "./database.types";
+import type { AchievementRow, BriefingRow, MenteeRow, MentorRow, MeetingRow } from "./database.types";
 
 const statusFromDb = { active: "Ativo", paused: "Pausado", closed: "Encerrado" } as const;
 const statusToDb = { Ativo: "active", Pausado: "paused", Encerrado: "closed" } as const;
@@ -11,6 +11,10 @@ const riskToDb = { Baixo: "low", Médio: "medium", Alto: "high" } as const;
 
 function initials(name: string) {
   return name.split(/\s+/).filter(Boolean).map((part) => part[0]).slice(0, 2).join("").toUpperCase();
+}
+
+function mapMentor(row: MentorRow): Mentor {
+  return { id: row.id, name: row.name, initials: initials(row.name), color: row.color, contact: row.email };
 }
 
 function mapMentee(row: MenteeRow, otherMentorIds: string[] = []): Mentee {
@@ -72,14 +76,15 @@ function assertNoError(error: { message: string } | null) {
 
 export async function loadAppData() {
   const supabase = getSupabaseBrowserClient();
-  const [menteesResult, linksResult, meetingsResult, meetingMentorsResult, achievementsResult] = await Promise.all([
+  const [mentorsResult, menteesResult, linksResult, meetingsResult, meetingMentorsResult, achievementsResult] = await Promise.all([
+    supabase.from("mentors").select("*").order("name"),
     supabase.from("mentees").select("*").order("name"),
     supabase.from("mentee_mentors").select("*"),
     supabase.from("meetings").select("*").order("starts_at"),
     supabase.from("meeting_mentors").select("*"),
     supabase.from("achievements").select("*").order("achieved_at", { ascending: false }),
   ]);
-  [menteesResult, linksResult, meetingsResult, meetingMentorsResult, achievementsResult].forEach((result) => assertNoError(result.error));
+  [mentorsResult, menteesResult, linksResult, meetingsResult, meetingMentorsResult, achievementsResult].forEach((result) => assertNoError(result.error));
 
   const menteeMentors = new Map<string, string[]>();
   const menteeLinks = (linksResult.data ?? []) as Array<{ mentee_id: string; mentor_id: string }>;
@@ -101,6 +106,7 @@ export async function loadAppData() {
   }
 
   return {
+    mentors: ((mentorsResult.data ?? []) as MentorRow[]).map(mapMentor),
     mentees: ((menteesResult.data ?? []) as MenteeRow[]).map((row) => mapMentee(row, menteeMentors.get(row.id))),
     meetings: [...dedupedMeetings.values()].sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()),
     achievements: ((achievementsResult.data ?? []) as AchievementRow[]).map(mapAchievement),
