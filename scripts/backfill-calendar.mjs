@@ -144,7 +144,7 @@ try {
   await database.connect();
   // Diferença INTENCIONAL ante o sync (route.ts:22): sem `where status <> 'closed'` —
   // o histórico pertence ao passado; cliente hoje encerrado tinha encontros quando era ativo.
-  const mentees = await database.query("select id, name, company, lower(email) as email, joined_at from public.mentees");
+  const mentees = await database.query("select id, name, company, brand_aliases, lower(email) as email, joined_at from public.mentees");
   await database.query("begin");
   await database.query("create temp table backfill_calendar_keys (calendar_id text, event_id text, primary key (calendar_id, event_id)) on commit drop");
 
@@ -155,7 +155,7 @@ try {
   let ambiguo = 0;
 
   for (const event of events) {
-    // Matching — cópia de app/api/calendar/sync/route.ts:30-36
+    // Matching — cópia de app/api/calendar/sync/route.ts:30-41
     const eventText = normalize(`${event.title} ${event.description}`);
     const eventStart = new Date(event.startsAt).getTime();
     const matches = mentees.rows.filter((mentee) => {
@@ -163,16 +163,21 @@ try {
       const name = normalize(mentee.name);
       const company = normalize(mentee.company);
       const companyMatch = company.length >= 4 && eventText.includes(company);
+      // Apelido segue a MESMA regra da marca (identificador forte, sem joinedCutoff).
+      const aliasMatch = (mentee.brand_aliases ?? []).some((alias) => {
+        const a = normalize(alias);
+        return a.length >= 4 && eventText.includes(a);
+      });
       // Guarda de entrada SÓ para casamento por nome de pessoa: primeiro nome é ambíguo
       // (ex.: outra "Adriana" de 2024), então evento anterior à entrada do cliente
-      // (folga de 30 dias) não casa por nome. E-mail e marca são identificadores fortes
-      // e valem para qualquer época — clientes com histórico anterior à entrada registrada
-      // (renovações/datas aproximadas na planilha) mantêm o histórico completo.
+      // (folga de 30 dias) não casa por nome. E-mail, marca e apelidos são identificadores
+      // fortes e valem para qualquer época — clientes com histórico anterior à entrada
+      // registrada (renovações/datas aproximadas na planilha) mantêm o histórico completo.
       const joinedCutoff = new Date(mentee.joined_at).getTime() - 30 * 24 * 60 * 60 * 1000;
       const nameMatch = name.length >= 4 && eventText.includes(name) && eventStart >= joinedCutoff;
-      return emailMatch || nameMatch || companyMatch;
+      return emailMatch || nameMatch || companyMatch || aliasMatch;
     });
-    // Regexes de ignore e grupo — cópia de app/api/calendar/sync/route.ts:37-38
+    // Regexes de ignore e grupo — cópia de app/api/calendar/sync/route.ts:42-43
     const ignoreByTitle = /(workshop\s+ae|reuni[aã]o\s+interna|daily\s+do\s+time|\balmo[cç]o\b|bloqueio\s+de\s+agenda|reuni[aã]o\s+comercial|1:1\s*\|)/i.test(event.title);
     const groupByTitle = /(plant[aã]o\s+atacado\s+exponencial|mentoria\s+em\s+grupo|cl[ií]nica\s+de\s+vendas)/i.test(event.title);
     const menteeId = !ignoreByTitle && !groupByTitle && matches.length === 1 ? matches[0].id : null;
@@ -189,7 +194,7 @@ try {
 
     await database.query("insert into backfill_calendar_keys (calendar_id, event_id) values ($1, $2) on conflict do nothing", [event.calendarId, event.eventId]);
 
-    // Upsert — SQL idêntico ao de app/api/calendar/sync/route.ts:47-60
+    // Upsert — SQL idêntico ao de app/api/calendar/sync/route.ts:52-65
     // (mesma identidade calendário+evento: reexecuções e convivência com o sync não duplicam)
     await database.query(`
       insert into public.meetings (
@@ -207,9 +212,9 @@ try {
     `, [event.eventId, event.calendarId, event.title, event.startsAt, event.endsAt, event.meetUrl, type, front, menteeId]);
   }
 
-  // Vínculo automático de mentor — cópia APENAS do INSERT de app/api/calendar/sync/route.ts:80-99
+  // Vínculo automático de mentor — cópia APENAS do INSERT de app/api/calendar/sync/route.ts:85-104
   // (frente com exatamente um mentor, encontro sem nenhum vínculo, source = 'auto').
-  // O DELETE de vínculos 'auto' divergentes do sync (route.ts:62-79) NÃO é replicado:
+  // O DELETE de vínculos 'auto' divergentes do sync (route.ts:67-84) NÃO é replicado:
   // nenhum vínculo existente, automático ou manual, é removido ou alterado.
   await database.query(`
     insert into public.meeting_mentors (meeting_id, mentor_id, source)

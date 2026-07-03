@@ -29,6 +29,7 @@ export interface Mentee {
   product?: string;
   instagramUrl?: string;
   folderUrl?: string;
+  brandAliases: string[];
 }
 
 export interface Meeting {
