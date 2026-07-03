@@ -38,6 +38,7 @@ export interface Meeting {
   duration: number;
   meetUrl: string;
   mentorIds: string[];
+  mentorSource: "auto" | "manual" | null;
   type: EventType;
   front: MeetingFront;
   menteeIds: string[];

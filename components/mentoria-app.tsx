@@ -9,7 +9,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { Achievement, Meeting, Mentee, MenteeStatus, Mentor, Risk } from "@/lib/types";
 import { briefingSections, briefingLabels } from "@/lib/briefing-schema";
-import { createAchievement, createMentee, generateBriefingLink, loadBriefing, loadMenteeMonthMeetings, markBriefingReviewed, loadAppData, saveParticipation, syncGoogleCalendar, updateMenteeContact, updateMenteeRisk, type MenteeBriefing, type MonthMeeting } from "@/lib/supabase/data";
+import { createAchievement, createMentee, generateBriefingLink, loadBriefing, loadMenteeMonthMeetings, loadMentorMonthStats, markBriefingReviewed, loadAppData, saveParticipation, syncGoogleCalendar, updateMeetingMentor, updateMenteeContact, updateMenteeRisk, type MenteeBriefing, type MentorMonthStats, type MonthMeeting } from "@/lib/supabase/data";
 
 type View = "dashboard" | "mentees" | "agenda" | "achievements";
 
@@ -19,6 +19,7 @@ const time = new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digi
 const weekdayShort = new Intl.DateTimeFormat("pt-BR", { weekday: "short" });
 const dayMonthLong = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "long" });
 const meetingDateKeyFormatter = new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" });
+const monthYearLong = new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" });
 
 function meetingDayKey(value: string) {
   return meetingDateKeyFormatter.format(new Date(value));
@@ -33,6 +34,8 @@ export function MentoriaApp({ userEmail, onSignOut }: { userEmail: string; onSig
   const [menteeList, setMenteeList] = useState<Mentee[]>([]);
   const [meetingList, setMeetingList] = useState<Meeting[]>([]);
   const [achievementList, setAchievementList] = useState<Achievement[]>([]);
+  const [mentorMonthStats, setMentorMonthStats] = useState<MentorMonthStats | null>(null);
+  const [mentorStatsError, setMentorStatsError] = useState(false);
   const [dataLoading, setDataLoading] = useState(true);
   const [dataError, setDataError] = useState("");
   const [syncingCalendar, setSyncingCalendar] = useState(false);
@@ -45,6 +48,15 @@ export function MentoriaApp({ userEmail, onSignOut }: { userEmail: string; onSig
   const [modal, setModal] = useState<"mentee" | "achievement" | null>(null);
   const [toast, setToast] = useState("");
   const [mobileNav, setMobileNav] = useState(false);
+
+  async function refreshMentorMonthStats() {
+    try {
+      setMentorMonthStats(await loadMentorMonthStats());
+      setMentorStatsError(false);
+    } catch {
+      setMentorStatsError(true);
+    }
+  }
 
   async function refreshData() {
     setDataLoading(true);
@@ -60,6 +72,7 @@ export function MentoriaApp({ userEmail, onSignOut }: { userEmail: string; onSig
     } finally {
       setDataLoading(false);
     }
+    await refreshMentorMonthStats();
   }
 
   useEffect(() => { void refreshData(); }, []);
@@ -80,6 +93,19 @@ export function MentoriaApp({ userEmail, onSignOut }: { userEmail: string; onSig
   function notify(message: string) {
     setToast(message);
     window.setTimeout(() => setToast(""), 2800);
+  }
+
+  async function handleMentorChange(meetingId: string, mentorId: string) {
+    const previous = meetingList;
+    setMeetingList((items) => items.map((item) => item.id === meetingId ? { ...item, mentorIds: [mentorId], mentorSource: "manual" as const } : item));
+    try {
+      await updateMeetingMentor(meetingId, mentorId);
+      notify("Mentor atualizado");
+      await refreshMentorMonthStats();
+    } catch (error) {
+      setMeetingList(previous);
+      notify(error instanceof Error && error.message ? error.message : "Não foi possível alterar o mentor.");
+    }
   }
 
   const active = menteeList.filter((item) => item.status === "Ativo");
@@ -125,9 +151,9 @@ export function MentoriaApp({ userEmail, onSignOut }: { userEmail: string; onSig
         <div className="content">
           {dataError && <div className="data-error"><span>Não foi possível carregar o Supabase: {dataError}</span><button onClick={() => void refreshData()}><RefreshCw size={15} /> Tentar novamente</button></div>}
           {dataLoading ? <div className="data-loading"><RefreshCw size={22} /><p>Carregando sua carteira...</p></div> : <>
-            {view === "dashboard" && <Dashboard active={active} atRisk={atRisk} absent={absent} mentees={menteeList} meetings={meetingList} achievements={achievementList} openMentee={setSelectedMentee} openMeeting={setSelectedMeeting} seeAll={navigate} newMentee={() => setModal("mentee")} />}
+            {view === "dashboard" && <Dashboard active={active} atRisk={atRisk} absent={absent} mentees={menteeList} meetings={meetingList} achievements={achievementList} mentors={mentorList} monthStats={mentorMonthStats} statsError={mentorStatsError} onMentorChange={handleMentorChange} openMentee={setSelectedMentee} openMeeting={setSelectedMeeting} seeAll={navigate} newMentee={() => setModal("mentee")} />}
             {view === "mentees" && <MenteesView list={filteredMentees} search={search} setSearch={setSearch} risk={riskFilter} setRisk={setRiskFilter} status={statusFilter} setStatus={setStatusFilter} sortBy={sortBy} setSortBy={setSortBy} open={setSelectedMentee} add={() => setModal("mentee")} />}
-            {view === "agenda" && <AgendaView meetings={meetingList} openMeeting={setSelectedMeeting} />}
+            {view === "agenda" && <AgendaView meetings={meetingList} mentors={mentorList} onMentorChange={handleMentorChange} openMeeting={setSelectedMeeting} />}
             {view === "achievements" && <AchievementsView achievements={achievementList} mentees={menteeList} add={() => setModal("achievement")} />}
           </>}
         </div>
@@ -160,11 +186,13 @@ function Sidebar({ view, navigate, count, open, close, syncing, onSync }: { view
   </>;
 }
 
-function Dashboard({ active, atRisk, absent, mentees, meetings, achievements, openMentee, openMeeting, seeAll, newMentee }: { active: Mentee[]; atRisk: Mentee[]; absent: Mentee[]; mentees: Mentee[]; meetings: Meeting[]; achievements: Achievement[]; openMentee: (m: Mentee) => void; openMeeting: (m: Meeting) => void; seeAll: (v: View) => void; newMentee: () => void }) {
+function Dashboard({ active, atRisk, absent, mentees, meetings, achievements, mentors, monthStats, statsError, onMentorChange, openMentee, openMeeting, seeAll, newMentee }: { active: Mentee[]; atRisk: Mentee[]; absent: Mentee[]; mentees: Mentee[]; meetings: Meeting[]; achievements: Achievement[]; mentors: Mentor[]; monthStats: MentorMonthStats | null; statsError: boolean; onMentorChange: (meetingId: string, mentorId: string) => void; openMentee: (m: Mentee) => void; openMeeting: (m: Meeting) => void; seeAll: (v: View) => void; newMentee: () => void }) {
   const highRisk = atRisk.filter((item) => item.risk === "Alto");
   const todayKey = todayDateKey();
   const todayMeetings = meetings.filter((meeting) => meetingDayKey(meeting.startsAt) === todayKey);
   const upcomingMeetings = meetings.filter((meeting) => new Date(meeting.startsAt).getTime() >= Date.now());
+  const monthLabel = monthStats ? monthYearLong.format(new Date(`${monthStats.month}-15T12:00:00-03:00`)).toUpperCase() : "";
+  const monthTotal = monthStats ? monthStats.stats.reduce((sum, item) => sum + item.total, 0) : 0;
   return <>
     <section className="page-heading"><div><p>OPERAÇÃO · {dayMonthLong.format(new Date()).toUpperCase()}</p><h1>Visão geral <span>↗</span></h1><h2>Clientes avançando. Time no controle.</h2></div><button className="primary-button" onClick={newMentee}><Plus size={18} /> Novo mentorado</button></section>
     <section className="metrics">
@@ -176,7 +204,7 @@ function Dashboard({ active, atRisk, absent, mentees, meetings, achievements, op
     <section className="dashboard-grid">
       <div className="card agenda-card">
         <CardTitle eyebrow="PRÓXIMOS ENCONTROS" title="Agenda de hoje" action="Ver agenda completa" onClick={() => seeAll("agenda")} />
-        {todayMeetings.length ? <div className="timeline">{todayMeetings.slice(0, 3).map((meeting, index) => <MeetingRow key={meeting.id} meeting={meeting} last={index === Math.min(todayMeetings.length, 3) - 1} onClick={() => openMeeting(meeting)} />)}</div> : <Empty text="Nenhum encontro na agenda de hoje." />}
+        {todayMeetings.length ? <div className="timeline">{todayMeetings.slice(0, 3).map((meeting, index) => <MeetingRow key={meeting.id} meeting={meeting} mentors={mentors} onMentorChange={onMentorChange} last={index === Math.min(todayMeetings.length, 3) - 1} onClick={() => openMeeting(meeting)} />)}</div> : <Empty text="Nenhum encontro na agenda de hoje." />}
       </div>
       <div className="card attention-card">
         <CardTitle eyebrow="OLHAR ATENTO" title="Clientes em risco" action="Ver todos" onClick={() => seeAll("mentees")} />
@@ -189,6 +217,15 @@ function Dashboard({ active, atRisk, absent, mentees, meetings, achievements, op
       <div className="card wins-card">
         <CardTitle eyebrow="BOAS NOTÍCIAS" title="Conquistas recentes" action="Ver todas" onClick={() => seeAll("achievements")} />
         {achievements.slice(0, 3).map((item) => { const person = menteeById(item.menteeId, mentees); const Icon = item.icon === "trophy" ? Trophy : item.icon === "target" ? Target : Sparkles; return <div className="win" key={item.id}><span className="win-icon"><Icon size={18} /></span><div><strong>{item.title}</strong><p>{person.name} · {date.format(new Date(item.date + "T12:00:00"))}</p></div></div>; })}
+      </div>
+      <div className="card mentor-month-card">
+        <CardTitle eyebrow={monthLabel ? `CARGA DO TIME · ${monthLabel}` : "CARGA DO TIME"} title="Mentorias do mês" action="Ver agenda" onClick={() => seeAll("agenda")} />
+        {statsError ? <p className="muted">Não foi possível carregar as mentorias do mês.</p>
+          : monthStats && monthStats.stats.length > 0 && monthTotal > 0 ? <div>
+            <div className="mentor-stat-row head"><span /><small>Individual</small><small>Grupo</small><small>Total</small></div>
+            {monthStats.stats.map((item) => <div className="mentor-stat-row" key={item.mentorId}><strong>{item.name}</strong><span>{item.individual}</span><span>{item.group}</span><b>{item.total}</b></div>)}
+          </div>
+          : <Empty text="Nenhuma mentoria realizada neste mês." />}
       </div>
     </section>
     <p className="footer-note"><Sparkles size={13} /> Acompanhamento próximo transforma jornadas em resultados.</p>
@@ -203,9 +240,21 @@ function CardTitle({ eyebrow, title, action, onClick }: { eyebrow: string; title
   return <div className="card-title"><div><span>{eyebrow}</span><h3>{title}</h3></div><button onClick={onClick}>{action}<ChevronRight size={15} /></button></div>;
 }
 
-function MeetingRow({ meeting, last, onClick }: { meeting: Meeting; last?: boolean; onClick: () => void }) {
+function MeetingRow({ meeting, mentors, onMentorChange, last, onClick }: { meeting: Meeting; mentors: Mentor[]; onMentorChange: (meetingId: string, mentorId: string) => void; last?: boolean; onClick: () => void }) {
   const start = new Date(meeting.startsAt);
-  return <div className={`meeting-row ${last ? "last" : ""}`}><div className="meeting-time"><b>{time.format(start)}</b><small>{meeting.duration} min</small></div><div className="timeline-mark"><i /><span /></div><div className="meeting-info"><span className={`type-badge ${meeting.type === "Grupo" ? "group" : ""}`}>{meeting.type}</span><strong>{meeting.title.replace(/^.*· /, "")}</strong><small>{meeting.front}</small></div><a href={meeting.meetUrl} target="_blank" onClick={(e) => e.stopPropagation()}><Video size={16} /> Entrar no Meet</a><button className="more-button" onClick={onClick} aria-label="Registrar participação"><MoreHorizontal size={19} /></button></div>;
+  return <div className={`meeting-row ${last ? "last" : ""}`}><div className="meeting-time"><b>{time.format(start)}</b><small>{meeting.duration} min</small></div><div className="timeline-mark"><i /><span /></div><div className="meeting-info"><span className={`type-badge ${meeting.type === "Grupo" ? "group" : ""}`}>{meeting.type}</span><strong>{meeting.title.replace(/^.*· /, "")}</strong><small>{meeting.front}</small><MentorChip meeting={meeting} mentors={mentors} onChange={(mentorId) => onMentorChange(meeting.id, mentorId)} /></div><a href={meeting.meetUrl} target="_blank" onClick={(e) => e.stopPropagation()}><Video size={16} /> Entrar no Meet</a><button className="more-button" onClick={onClick} aria-label="Registrar participação"><MoreHorizontal size={19} /></button></div>;
+}
+
+function MentorChip({ meeting, mentors, onChange }: { meeting: Meeting; mentors: Mentor[]; onChange: (mentorId: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const current = mentors.find((m) => m.id === meeting.mentorIds[0]);
+  const extras = meeting.mentorIds.length - 1;
+  return <div className="mentor-pick">
+    <button className={`mentor-chip ${current ? "" : "empty"}`} onClick={() => setOpen((v) => !v)}>{current ? <><span className="mini-avatar">{current.initials}</span>{current.name}{extras > 0 && <> +{extras}</>}</> : "Sem mentor"}{meeting.mentorSource === "manual" && <em className="manual-flag">manual</em>}</button>
+    {open && <><div className="filter-overlay" onClick={() => setOpen(false)} /><div className="mentor-popover">
+      {mentors.length ? mentors.map((mentor) => <button key={mentor.id} className={mentor.id === current?.id ? "selected" : ""} onClick={() => { setOpen(false); onChange(mentor.id); }}><span className="mini-avatar">{mentor.initials}</span>{mentor.name}{mentor.id === current?.id && <Check size={14} />}</button>) : <p className="muted">Nenhum mentor cadastrado.</p>}
+    </div></>}
+  </div>;
 }
 
 function MenteesView({ list, search, setSearch, risk, setRisk, status, setStatus, sortBy, setSortBy, open, add }: { list: Mentee[]; search: string; setSearch: (s: string) => void; risk: "Todos" | Risk; setRisk: (r: "Todos" | Risk) => void; status: "Todos" | MenteeStatus; setStatus: (s: "Todos" | MenteeStatus) => void; sortBy: "nome" | "risco" | "status"; setSortBy: (s: "nome" | "risco" | "status") => void; open: (m: Mentee) => void; add: () => void }) {
@@ -228,7 +277,7 @@ function MenteesView({ list, search, setSearch, risk, setRisk, status, setStatus
   </div>;
 }
 
-function AgendaView({ meetings, openMeeting }: { meetings: Meeting[]; openMeeting: (m: Meeting) => void }) {
+function AgendaView({ meetings, mentors, onMentorChange, openMeeting }: { meetings: Meeting[]; mentors: Mentor[]; onMentorChange: (meetingId: string, mentorId: string) => void; openMeeting: (m: Meeting) => void }) {
   const groupedMeetings = meetings.reduce((groups, meeting) => {
     const key = meetingDayKey(meeting.startsAt);
     const current = groups.get(key) ?? [];
@@ -271,15 +320,15 @@ function AgendaView({ meetings, openMeeting }: { meetings: Meeting[]; openMeetin
       const currentDate = new Date(`${key}T12:00:00-03:00`);
       return <div key={key}>
         <div className="day-label"><span>DIA SELECIONADO</span><p>{longDate.format(currentDate)} · {items.length} encontro(s)</p></div>
-        {items.map((item) => <AgendaItem key={item.id} item={item} open={() => openMeeting(item)} />)}
+        {items.map((item) => <AgendaItem key={item.id} item={item} mentors={mentors} onMentorChange={onMentorChange} open={() => openMeeting(item)} />)}
       </div>;
     }) : <Empty text="Nenhum encontro sincronizado com o Calendar." />}</div>
   </div>;
 }
 
-function AgendaItem({ item, open }: { item: Meeting; open: () => void }) {
+function AgendaItem({ item, mentors, onMentorChange, open }: { item: Meeting; mentors: Mentor[]; onMentorChange: (meetingId: string, mentorId: string) => void; open: () => void }) {
   const start = new Date(item.startsAt);
-  return <div className="agenda-item"><div className="date-block"><b>{time.format(start)}</b><small>{item.duration} min</small></div><div className={`agenda-accent ${item.type === "Grupo" ? "group" : ""}`} /><div className="agenda-copy"><span className={`type-badge ${item.type === "Grupo" ? "group" : ""}`}>{item.type}</span><h3>{item.title}</h3><p>{item.front}</p></div><a href={item.meetUrl} target="_blank"><Video size={17} /> Entrar</a><button className="secondary-button" onClick={open}><UserCheck size={17} /> Registrar participação</button></div>;
+  return <div className="agenda-item"><div className="date-block"><b>{time.format(start)}</b><small>{item.duration} min</small></div><div className={`agenda-accent ${item.type === "Grupo" ? "group" : ""}`} /><div className="agenda-copy"><span className={`type-badge ${item.type === "Grupo" ? "group" : ""}`}>{item.type}</span><h3>{item.title}</h3><p>{item.front}</p><MentorChip meeting={item} mentors={mentors} onChange={(mentorId) => onMentorChange(item.id, mentorId)} /></div><a href={item.meetUrl} target="_blank"><Video size={17} /> Entrar</a><button className="secondary-button" onClick={open}><UserCheck size={17} /> Registrar participação</button></div>;
 }
 
 function AchievementsView({ achievements, mentees, add }: { achievements: Achievement[]; mentees: Mentee[]; add: () => void }) {

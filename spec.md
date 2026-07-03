@@ -1,121 +1,109 @@
-# Spec: Formulário de Briefing Compartilhável com Mentorados
+# Spec: Vínculo Automático de Mentor por Frente do Encontro + Contador de Mentorias
 
 ## Visão Geral
 
-Atualmente o briefing de cada mentorado é um texto livre preenchido pela equipe. Esta feature substitui esse fluxo por um **formulário estruturado de briefing**, baseado nas 29 perguntas do formulário AE, que o **próprio mentorado** preenche.
+Hoje cada encontro sincronizado do calendário é classificado automaticamente em uma **frente** (Tráfego, Redes sociais, Comercial ou Estratégia) a partir do título, mas nenhum mentor fica vinculado ao encontro — o vínculo mentor↔encontro existe na base, porém nunca é preenchido. Esta feature fecha esse ciclo em três partes:
 
-A equipe gera e compartilha com cada mentorado um **link público único** (via token, sem login e sem senha) que abre uma tela onde ele responde o briefing. As respostas são armazenadas de forma estruturada (um registro por mentorado, com cada pergunta em seu próprio campo) e ficam visíveis para a equipe dentro da ficha do mentorado já existente.
+1. **Frente de atuação por mentor:** cada mentor da equipe passa a ter uma frente de atuação registrada de forma permanente (Marcelle Mesquita → Tráfego; Day Maciel → Redes sociais; Bárbara Lazzari → Comercial; Felipe Santos → Estratégia).
+2. **Atribuição automática no sync:** ao sincronizar a agenda, o sistema vincula automaticamente ao encontro o mentor cuja frente corresponde à frente classificada do encontro (ex.: título "🚀 Mentoria Individual - Tráfego Pago (Silvia | Shallon Moda)" → frente Tráfego → Marcelle). A equipe pode corrigir o vínculo manualmente quando a atribuição automática errar (ex.: Felipe cobrindo um encontro de Comercial), e sincronizações futuras **nunca sobrescrevem** uma correção manual.
+3. **Contador de mentorias realizadas:** a tela "Visão geral" ganha um card que mostra, para o mês atual, quantas mentorias cada mentor já realizou, separadas por tipo (Individual e Grupo). "Realizada" significa encontro cuja data/hora de início já passou.
 
-Cada briefing tem um **status** (pendente / preenchido) e marcações de tempo (criado, enviado/preenchido, atualizado), permitindo à equipe acompanhar quem ainda não respondeu.
-
-Adicionalmente, a feature importa as **44 respostas já existentes** da planilha de briefing para **pré-preencher** as fichas dos mentorados, casando por nome da marca (empresa). Os casos que casam automaticamente são pré-preenchidos; os demais ficam marcados para revisão manual.
-
-Resolve o problema de: (a) coletar o briefing diretamente com o mentorado sem retrabalho da equipe, (b) padronizar e estruturar as informações para consulta e análise, e (c) aproveitar os briefings já coletados sem redigitação.
+Importante: **não existe mentor principal por mentorado** — todos os mentorados recebem mentoria de todos os mentores. O vínculo de mentor é sempre **por encontro (sessão)**.
 
 **Atores:**
-- **Equipe (interna):** gera o link, acompanha o status, visualiza as respostas, importa respostas existentes.
-- **Mentorado (externo):** acessa o link público e preenche o formulário, sem autenticação.
+- **Sistema (sync da agenda):** classifica a frente e atribui o mentor automaticamente.
+- **Equipe (interna):** consulta o mentor de cada encontro, corrige vínculos errados e acompanha o contador de mentorias.
 
-**As 29 perguntas do briefing (formulário AE), agrupadas por seção:**
-
-1. *Identificação da marca:* nome da marca, nicho, ano de fundação, estado, cidade.
-2. *Estrutura do negócio:* possui loja física (sim/não) e quantas, tipo de operação (atacado/varejo/ambos), número de funcionários, número de pessoas no marketing, número de pessoas no comercial.
-3. *História e contexto:* história da empresa.
-4. *Canais e vendas:* principal canal de vendas atual, canais online usados, política de primeira compra, política de formalidade (CNPJ/CPF).
-5. *Clientes:* perfis de cliente-ideal, perfil prioritário, média de clientes recorrentes ativos, média de novos clientes por mês, há recompra (sim/não/às vezes).
-6. *Ações de venda:* ações para vender para clientes da base, ações para vender para novos clientes.
-7. *Coleções e lançamentos:* frequência de lançamento de coleções, estratégia de lançamento.
-8. *Marketing e tráfego:* maior dificuldade no marketing, faz tráfego pago (sim/não) e quanto investe.
-9. *Relacionamento e funis:* grupo de WhatsApp de inativos (sim/não), grupo de WhatsApp de clientes (sim/não), funis/estratégias usados.
+**Problemas que resolve:**
+- (a) saber quem é o mentor responsável por cada encontro sem preenchimento manual;
+- (b) permitir correção quando a regra automática errar, sem retrabalho a cada sync;
+- (c) dar visibilidade à gestão de quantas mentorias cada mentor realizou no mês, por tipo.
 
 ---
 
 ## Páginas / Módulos
 
-### Módulo A — Tela Pública de Briefing do Mentorado
+### Módulo A — Frente de Atuação do Mentor
 
-**Descrição:** Página acessível por um link público com token único por mentorado, sem login e sem senha, onde o mentorado preenche (ou revisa) as respostas do briefing. O token identifica de qual mentorado é o briefing; nenhuma outra informação sensível do sistema é exposta.
+**Descrição:** Cada mentor da equipe passa a ter uma frente de atuação registrada de forma permanente (Tráfego, Redes sociais, Comercial ou Estratégia). Essa frente é a base da atribuição automática. Não há tela nova: o registro é feito uma única vez na base de mentores existente.
 
 **Componentes:**
-- Cabeçalho de identificação: exibe o nome do mentorado/marca a que o briefing se refere e uma mensagem de boas-vindas/instruções de preenchimento.
-- Indicador de status do briefing: mostra se o briefing está pendente ou já foi preenchido (e quando).
-- Formulário em seções: agrupa as 29 perguntas nas seções descritas (Identificação da marca, Estrutura do negócio, História e contexto, Canais e vendas, Clientes, Ações de venda, Coleções e lançamentos, Marketing e tráfego, Relacionamento e funis).
-- Campos de cada pergunta: campos de texto curto, texto longo, número, escolha única (ex.: tipo de operação, recompra) e sim/não com campo condicional (ex.: possui loja física → quantas; faz tráfego pago → quanto investe).
-- Botão de salvar/enviar respostas.
-- Mensagem de confirmação de envio: confirma que as respostas foram registradas.
-- Estado de erro de token: mensagem exibida quando o link é inválido, inexistente ou revogado.
+- Registro de frente por mentor: cada mentor armazena, junto aos seus dados já existentes, a frente em que atua (pode ficar vazia para mentores sem frente definida).
+- Carga inicial das frentes: atribuição das frentes aos quatro mentores atuais (Marcelle Mesquita → Tráfego; Day Maciel → Redes sociais; Bárbara Lazzari → Comercial; Felipe Santos → Estratégia).
 
 **Comportamentos:**
-- Abrir o formulário a partir do link público com token: o sistema carrega a tela correspondente ao token informado.
-- Validar o token: o sistema verifica se o token existe e está ativo antes de exibir o formulário.
-- Exibir mensagem de erro quando o token for inválido, inexistente ou revogado, sem revelar dados do sistema.
-- Carregar respostas já existentes no formulário quando o briefing já tiver sido preenchido anteriormente (permitir revisão/edição).
-- Exibir o nome da marca/mentorado associado ao token no cabeçalho.
-- Preencher os campos da seção "Identificação da marca".
-- Preencher os campos da seção "Estrutura do negócio", incluindo o campo condicional de quantidade de lojas quando "possui loja física" for sim.
-- Preencher o campo da seção "História e contexto".
-- Preencher os campos da seção "Canais e vendas".
-- Preencher os campos da seção "Clientes".
-- Preencher os campos da seção "Ações de venda".
-- Preencher os campos da seção "Coleções e lançamentos".
-- Preencher os campos da seção "Marketing e tráfego", incluindo o campo condicional de valor investido quando "faz tráfego pago" for sim.
-- Preencher os campos da seção "Relacionamento e funis".
-- Validar os dados de entrada de cada campo (tipos, campos obrigatórios e campos condicionais) antes de aceitar o envio.
-- Salvar as respostas do briefing associadas ao mentorado correspondente ao token.
-- Atualizar o status do briefing para "preenchido" e registrar a data/hora de preenchimento ao salvar.
-- Exibir mensagem de confirmação após o envio bem-sucedido.
-- Exibir mensagem de erro caso o salvamento falhe, mantendo os dados digitados.
-- Reenviar/atualizar respostas: permitir que o mentorado salve novamente, atualizando o registro e a data/hora de atualização.
+- Armazenar de forma permanente a frente de atuação de cada mentor, restrita às quatro frentes existentes (Tráfego, Redes sociais, Comercial, Estratégia).
+- Permitir que um mentor exista sem frente definida (nesse caso ele nunca recebe atribuição automática).
+- Registrar, na carga inicial, a frente de cada um dos quatro mentores atuais conforme o mapeamento acima.
+- Garantir no máximo um mentor por frente para fins de atribuição automática (se houver mais de um mentor na mesma frente, o sistema não atribui automaticamente encontros daquela frente).
 
 ---
 
-### Módulo B — Visualização e Gestão do Briefing na Ficha Interna
+### Módulo B — Atribuição Automática de Mentor no Sync da Agenda
 
-**Descrição:** Dentro da ficha (drawer) já existente do mentorado, a equipe acessa uma área de briefing onde gera/copia o link público, acompanha o status de preenchimento e visualiza as respostas estruturadas enviadas pelo mentorado.
+**Descrição:** Durante a sincronização da agenda (a mesma que hoje cria/atualiza os encontros e classifica a frente pelo título), o sistema passa a vincular automaticamente o mentor correspondente à frente de cada encontro. Vínculos corrigidos manualmente pela equipe são preservados em todas as sincronizações futuras.
 
 **Componentes:**
-- Seção de briefing na ficha do mentorado: área dedicada dentro do drawer existente.
-- Indicador de status do briefing: pendente ou preenchido, com data/hora de preenchimento e de última atualização quando houver.
-- Campo/exibição do link público do mentorado.
-- Botão de gerar link (quando ainda não existe token).
-- Botão de copiar link.
-- Botão de revogar/regenerar link (gera um novo token e invalida o anterior).
-- Visualização das respostas: as 29 perguntas agrupadas por seção com os respectivos valores respondidos.
-- Estado vazio: indicação de que o briefing ainda não foi preenchido.
-- Marcação de "revisão pendente": destaque para fichas pré-preenchidas por importação que ainda precisam de revisão manual.
+- Rotina de atribuição dentro do sync existente: para cada encontro criado ou atualizado, resolve o mentor pela frente classificada.
+- Marcação de origem do vínculo: cada encontro registra se o vínculo de mentor atual foi definido automaticamente pelo sync ou manualmente pela equipe.
 
 **Comportamentos:**
-- Exibir a seção de briefing dentro da ficha do mentorado.
-- Exibir o status atual do briefing (pendente/preenchido) e as datas associadas.
-- Gerar o link público (token único) do mentorado quando ainda não existir.
-- Exibir o link público quando já existir.
-- Copiar o link público para a área de transferência.
-- Revogar o link atual e gerar um novo token, invalidando o anterior.
-- Visualizar as respostas do briefing agrupadas por seção.
-- Exibir estado vazio quando o briefing ainda não foi preenchido.
-- Exibir o conteúdo pré-preenchido por importação e a marcação de "revisão pendente" quando aplicável.
-- Marcar uma ficha pré-preenchida como revisada (remover a marcação de revisão pendente).
-- Atualizar a exibição do status quando o mentorado preencher/atualizar o briefing.
+- Ao criar um encontro novo no sync, classificar a frente pelo título/descrição (comportamento já existente, mantido).
+- Ao criar um encontro novo no sync, vincular automaticamente o mentor cuja frente de atuação é igual à frente classificada do encontro.
+- Ao criar um encontro novo cuja frente não tem mentor correspondente, deixar o encontro sem mentor vinculado.
+- Aplicar a atribuição automática tanto a encontros do tipo Individual quanto do tipo Grupo.
+- Marcar como "automático" todo vínculo de mentor criado pelo sync.
+- Ao reprocessar no sync um encontro já existente cujo vínculo é automático, recalcular o mentor pela frente atual do encontro e atualizar o vínculo se a frente tiver mudado.
+- Ao reprocessar no sync um encontro já existente cujo vínculo foi definido manualmente, **não alterar** o vínculo de mentor, mesmo que a frente classificada aponte outro mentor.
+- Ao reprocessar no sync um encontro sem vínculo cuja frente passou a ter mentor correspondente, criar o vínculo automático.
+- Remover o vínculo de mentor junto com o encontro quando o encontro é removido pelo sync (comportamento de limpeza já existente, estendido ao vínculo).
+- Não vincular mentor a eventos que o sync já ignora hoje (reuniões internas, bloqueios etc.).
 
 ---
 
-### Módulo C — Importação das Respostas Existentes
+### Módulo C — Edição do Vínculo Mentor↔Encontro (Agenda)
 
-**Descrição:** Rotina executada pela equipe para importar as 44 respostas já coletadas na planilha de briefing e pré-preencher as fichas dos mentorados. O casamento é feito por nome da marca (empresa); as respostas que casam com um mentorado existente são pré-preenchidas, e as que não casam ou geram ambiguidade ficam separadas para revisão manual.
+**Descrição:** Na tela "Agenda" (e no detalhe do encontro acessado também pela "Visão geral"), a equipe visualiza o mentor vinculado a cada encontro e pode corrigi-lo quando a atribuição automática estiver errada. Uma correção manual passa a ser definitiva perante o sync.
 
 **Componentes:**
-- Origem dos dados: a planilha de briefing com as 44 respostas (a planilha não possui e-mail).
-- Resultado da importação: relação de respostas casadas automaticamente, respostas sem correspondência e respostas ambíguas (mais de um possível mentorado).
-- Resumo da importação: contagem de pré-preenchidas, não casadas e a revisar.
+- Indicação do mentor no item de encontro: exibe o nome do mentor vinculado junto às informações já mostradas (horário, tipo, frente).
+- Indicação de "sem mentor": estado exibido quando o encontro não tem mentor vinculado.
+- Controle de edição do mentor: seletor com a lista de mentores da equipe para trocar o mentor do encontro.
+- Indicação de vínculo manual: sinalização discreta de que o vínculo daquele encontro foi corrigido manualmente.
 
 **Comportamentos:**
-- Ler as 44 respostas da planilha de briefing.
-- Normalizar o nome da marca de cada resposta para comparação (ignorar diferenças de caixa, espaços e acentos).
-- Casar cada resposta com um mentorado existente pelo nome da marca/empresa.
-- Pré-preencher o briefing estruturado do mentorado com os campos correspondentes quando o casamento for único e automático.
-- Definir o status do briefing pré-preenchido e marcá-lo como "revisão pendente".
-- Não sobrescrever um briefing já preenchido pelo mentorado (preservar respostas mais recentes / evitar perda de dados).
-- Separar para revisão manual as respostas sem correspondência de mentorado.
-- Separar para revisão manual as respostas com correspondência ambígua (mais de um mentorado possível).
-- Mapear cada coluna da planilha para o campo estruturado correspondente das 29 perguntas.
-- Gerar um resumo da importação com a contagem de pré-preenchidas, não casadas e a revisar.
+- Exibir o mentor vinculado em cada encontro listado na Agenda.
+- Exibir o mentor vinculado no encontro do card "Agenda de hoje" da Visão geral.
+- Exibir o estado "sem mentor" quando o encontro não possui vínculo.
+- Abrir o controle de edição do mentor a partir do encontro.
+- Listar todos os mentores da equipe como opções no controle de edição.
+- Trocar o mentor vinculado ao encontro para o mentor escolhido pela equipe (a edição sempre resulta em um mentor — não é possível deixar o encontro sem mentor, pois o sync não distinguiria remoção intencional de ausência de vínculo).
+- Marcar o vínculo como "manual" sempre que a equipe trocar o mentor pela edição.
+- Exibir a sinalização de vínculo manual nos encontros corrigidos pela equipe.
+- Persistir a alteração imediatamente ao confirmar a escolha e refletir o novo mentor na tela sem recarregar a página.
+- Exibir mensagem de erro e manter o valor anterior caso a gravação da edição falhe.
+- Validar no servidor que o mentor escolhido existe e que quem edita é um usuário autenticado da equipe.
+
+---
+
+### Módulo D — Contador de Mentorias por Mentor (Visão geral)
+
+**Descrição:** Card na tela "Visão geral" que mostra, para o mês atual, quantas mentorias cada mentor já realizou, separadas por tipo (Individual e Grupo). Serve para a gestão acompanhar a distribuição de carga entre os mentores.
+
+**Componentes:**
+- Card "Mentorias do mês" na grade de cards da Visão geral: uma linha por mentor.
+- Linha do mentor: nome do mentor, quantidade de mentorias Individuais realizadas, quantidade de mentorias em Grupo realizadas e total.
+- Indicação do período: referência explícita ao mês atual.
+- Estado vazio: mensagem exibida quando nenhum mentor tem mentoria realizada no mês.
+
+**Comportamentos:**
+- Calcular no servidor, para cada mentor, a quantidade de encontros vinculados a ele cujo início está dentro do mês corrente e cuja data/hora de início já passou.
+- Separar a contagem por tipo de encontro (Individual e Grupo) e calcular o total por mentor.
+- Considerar apenas o vínculo mentor↔encontro vigente (automático ou manual) no momento do cálculo — correções manuais alteram a contagem.
+- Não contar encontros futuros do mês corrente (ainda não realizados).
+- Não contar encontros de meses anteriores.
+- Não contar encontros sem mentor vinculado.
+- Exibir o card na Visão geral com uma linha por mentor que tenha ao menos um vínculo, mesmo com contagem zero no mês.
+- Exibir a referência do mês corrente no card.
+- Exibir o estado vazio quando não houver nenhuma mentoria realizada no mês.
+- Atualizar a contagem exibida quando a equipe corrigir um vínculo de mentor ou quando um novo sync alterar vínculos automáticos.

@@ -39,14 +39,15 @@ function mapMentee(row: MenteeRow): Mentee {
   };
 }
 
-function mapMeeting(row: MeetingRow, mentorIds: string[]): Meeting {
+function mapMeeting(row: MeetingRow, links: Array<{ mentorId: string; source: "auto" | "manual" }>): Meeting {
   return {
     id: row.id,
     title: row.title,
     startsAt: row.starts_at,
     duration: Math.max(1, Math.round((new Date(row.ends_at).getTime() - new Date(row.starts_at).getTime()) / 60000)),
     meetUrl: row.meet_url || "#",
-    mentorIds,
+    mentorIds: links.map((link) => link.mentorId),
+    mentorSource: links.length === 0 ? null : links.some((link) => link.source === "manual") ? "manual" : "auto",
     type: row.type === "individual" ? "Individual" : "Grupo",
     front: frontDbToLabel(row.front),
     menteeIds: row.individual_mentee_id ? [row.individual_mentee_id] : [],
@@ -83,9 +84,9 @@ export async function loadAppData() {
   ]);
   [mentorsResult, menteesResult, meetingsResult, meetingMentorsResult, achievementsResult].forEach((result) => assertNoError(result.error));
 
-  const meetingMentors = new Map<string, string[]>();
-  const meetingLinks = (meetingMentorsResult.data ?? []) as Array<{ meeting_id: string; mentor_id: string }>;
-  for (const link of meetingLinks) meetingMentors.set(link.meeting_id, [...(meetingMentors.get(link.meeting_id) ?? []), link.mentor_id]);
+  const meetingMentors = new Map<string, Array<{ mentorId: string; source: "auto" | "manual" }>>();
+  const meetingLinks = (meetingMentorsResult.data ?? []) as Array<{ meeting_id: string; mentor_id: string; source: "auto" | "manual" }>;
+  for (const link of meetingLinks) meetingMentors.set(link.meeting_id, [...(meetingMentors.get(link.meeting_id) ?? []), { mentorId: link.mentor_id, source: link.source }]);
 
   const dedupedMeetings = new Map<string, Meeting>();
   for (const row of (meetingsResult.data ?? []) as MeetingRow[]) {
@@ -97,6 +98,7 @@ export async function loadAppData() {
       continue;
     }
     existing.mentorIds = [...new Set([...existing.mentorIds, ...meeting.mentorIds])];
+    existing.mentorSource = existing.mentorSource === "manual" || meeting.mentorSource === "manual" ? "manual" : (existing.mentorSource ?? meeting.mentorSource);
   }
 
   return {
@@ -249,6 +251,30 @@ export async function saveParticipation(meetingId: string, entries: Participatio
     const result = await response.json().catch(() => ({}));
     throw new Error(result.error || "Não foi possível salvar a participação.");
   }
+}
+
+export async function updateMeetingMentor(meetingId: string, mentorId: string): Promise<void> {
+  const response = await fetch(`/api/meetings/${meetingId}/mentor`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...(await teamAuthHeader()) },
+    body: JSON.stringify({ mentorId }),
+  });
+  if (!response.ok) {
+    const result = await response.json().catch(() => ({}));
+    throw new Error(result.error || "Não foi possível alterar o mentor.");
+  }
+}
+
+export interface MentorMonthStat { mentorId: string; name: string; individual: number; group: number; total: number }
+export interface MentorMonthStats { month: string; stats: MentorMonthStat[] }
+
+export async function loadMentorMonthStats(): Promise<MentorMonthStats> {
+  const response = await fetch("/api/mentors/monthly-stats", {
+    headers: { ...(await teamAuthHeader()) },
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error || "Não foi possível carregar as mentorias do mês.");
+  return result as MentorMonthStats;
 }
 
 export interface MonthMeeting {
