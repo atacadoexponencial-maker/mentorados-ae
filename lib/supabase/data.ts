@@ -36,6 +36,7 @@ function mapMentee(row: MenteeRow): Mentee {
     product: row.product ?? undefined,
     instagramUrl: row.instagram_url ?? undefined,
     folderUrl: row.folder_url ?? undefined,
+    brandAliases: row.brand_aliases,
   };
 }
 
@@ -399,6 +400,7 @@ export async function updateMenteeContact(input: Mentee): Promise<Mentee> {
   const { data, error } = await getSupabaseBrowserClient().from("mentees").update({
     instagram_url: input.instagramUrl ?? null,
     folder_url: input.folderUrl ?? null,
+    brand_aliases: input.brandAliases,
   }).eq("id", input.id).select("*").single();
   assertNoError(error);
   return mapMentee(data as MenteeRow);

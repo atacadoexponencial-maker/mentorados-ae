@@ -79,7 +79,7 @@ const database = new pg.Client({ connectionString, ssl: connectionString.include
 try {
   await database.connect();
   // Sem filtro de status: pastas de clientes hoje encerrados também têm histórico.
-  const mentees = (await database.query("select id, name, company from public.mentees")).rows;
+  const mentees = (await database.query("select id, name, company, brand_aliases from public.mentees")).rows;
   const meetings = (await database.query(
     "select id, individual_mentee_id, starts_at, ends_at from public.meetings where type = 'individual' and individual_mentee_id is not null",
   )).rows;
@@ -104,17 +104,26 @@ try {
 
   for (const folder of clientFolders) {
     // Matching pasta<->cliente — mesma estratégia de scripts/import-briefing.mjs:59-79:
-    // exato primeiro, senão continência parcial nos dois sentidos, contra company e name.
+    // exato primeiro, senão continência parcial nos dois sentidos, contra company, name
+    // e cada apelido de brand_aliases (apelido segue a mesma regra da marca).
     const folderKey = normalize(folder.name);
     let matches = folderKey
-      ? mentees.filter((mentee) => folderKey === normalize(mentee.company) || folderKey === normalize(mentee.name))
+      ? mentees.filter((mentee) =>
+          folderKey === normalize(mentee.company)
+          || folderKey === normalize(mentee.name)
+          || (mentee.brand_aliases ?? []).some((alias) => folderKey === normalize(alias)))
       : [];
     if (folderKey && matches.length === 0) {
       matches = mentees.filter((mentee) => {
         const company = normalize(mentee.company);
         const name = normalize(mentee.name);
+        const aliasMatch = (mentee.brand_aliases ?? []).some((alias) => {
+          const a = normalize(alias);
+          return a && (a.includes(folderKey) || folderKey.includes(a));
+        });
         return (company && (company.includes(folderKey) || folderKey.includes(company)))
-          || (name && (name.includes(folderKey) || folderKey.includes(name)));
+          || (name && (name.includes(folderKey) || folderKey.includes(name)))
+          || aliasMatch;
       });
     }
     const distinctIds = [...new Set(matches.map((mentee) => mentee.id))];

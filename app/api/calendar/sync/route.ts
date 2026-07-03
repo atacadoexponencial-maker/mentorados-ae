@@ -19,7 +19,7 @@ async function runCalendarSync() {
     const window = activeSyncWindow();
     const events = await listWorkspaceEvents(window);
     await database.connect();
-    const menteesResult = await database.query("select id, name, company, lower(email) as email from public.mentees where status <> 'closed'");
+    const menteesResult = await database.query("select id, name, company, brand_aliases, lower(email) as email from public.mentees where status <> 'closed'");
     await database.query("begin");
     await database.query("create temp table current_calendar_sync_keys (calendar_id text, event_id text, primary key (calendar_id, event_id)) on commit drop");
 
@@ -32,7 +32,12 @@ async function runCalendarSync() {
         const emailMatch = mentee.email && event.attendeeEmails.includes(mentee.email);
         const name = normalized(mentee.name);
         const company = normalized(mentee.company);
-        return emailMatch || (name.length >= 4 && eventText.includes(name)) || (company.length >= 4 && eventText.includes(company));
+        // Apelido segue a MESMA regra da marca: normalizado, 4+ caracteres, contido no texto.
+        const aliasMatch = ((mentee.brand_aliases ?? []) as string[]).some((alias) => {
+          const a = normalized(alias);
+          return a.length >= 4 && eventText.includes(a);
+        });
+        return emailMatch || (name.length >= 4 && eventText.includes(name)) || (company.length >= 4 && eventText.includes(company)) || aliasMatch;
       });
       const ignoreByTitle = /(workshop\s+ae|reuni[aã]o\s+interna|daily\s+do\s+time|\balmo[cç]o\b|bloqueio\s+de\s+agenda|reuni[aã]o\s+comercial|1:1\s*\|)/i.test(event.title);
       const groupByTitle = /(plant[aã]o\s+atacado\s+exponencial|mentoria\s+em\s+grupo|cl[ií]nica\s+de\s+vendas)/i.test(event.title);
