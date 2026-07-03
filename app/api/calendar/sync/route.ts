@@ -26,8 +26,14 @@ async function runCalendarSync() {
     let individual = 0;
     let group = 0;
     let ignored = 0;
+    // O mesmo evento pode existir no calendário de 2+ mentores (convidados entre si);
+    // sem isso, cada cópia viraria um encontro duplicado no banco.
+    const seenEvents = new Set<string>();
     for (const event of events) {
       const eventText = normalized(`${event.title} ${event.description}`);
+      const dedupeKey = `${normalized(event.title)}|${event.startsAt}`;
+      if (seenEvents.has(dedupeKey)) { ignored += 1; continue; }
+      seenEvents.add(dedupeKey);
       const matches = menteesResult.rows.filter((mentee) => {
         const emailMatch = mentee.email && event.attendeeEmails.includes(mentee.email);
         const name = normalized(mentee.name);
