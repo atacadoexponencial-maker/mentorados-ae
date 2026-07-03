@@ -153,8 +153,14 @@ try {
   let ignoradoPorRegra = 0;
   let semCorrespondencia = 0;
   let ambiguo = 0;
+  let duplicado = 0;
 
+  // O mesmo evento pode existir no calendário de 2+ mentores — cópia da regra do sync.
+  const seenEvents = new Set();
   for (const event of events) {
+    const dedupeKey = `${normalize(event.title)}|${event.startsAt}`;
+    if (seenEvents.has(dedupeKey)) { duplicado += 1; continue; }
+    seenEvents.add(dedupeKey);
     // Matching — cópia de app/api/calendar/sync/route.ts:30-41
     const eventText = normalize(`${event.title} ${event.description}`);
     const eventStart = new Date(event.startsAt).getTime();
@@ -249,6 +255,7 @@ try {
   console.log(`Ignorados por regra de título: ${ignoradoPorRegra}`);
   console.log(`Sem correspondência: ${semCorrespondencia}`);
   console.log(`Ambíguos: ${ambiguo}`);
+  console.log(`Duplicados entre calendários (pulados): ${duplicado}`);
 } catch (error) {
   await database.query("rollback").catch(() => undefined);
   console.error(`Falha no backfill: ${error instanceof Error ? error.message : "erro desconhecido"}`);
