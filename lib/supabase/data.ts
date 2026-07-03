@@ -297,19 +297,23 @@ export async function loadMenteeMonthMeetings(menteeId: string): Promise<MonthMe
   const now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
   const end = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString();
-  const { data, error } = await getSupabaseBrowserClient()
-    .from("meeting_participations")
-    .select("meetings!inner(title, starts_at, type)")
-    .eq("mentee_id", menteeId)
-    .eq("attended", true)
-    .gte("meetings.starts_at", start)
-    .lt("meetings.starts_at", end);
-  assertNoError(error);
-  type JoinedMeeting = { title: string; starts_at: string; type: "individual" | "group" };
-  const rows = (data ?? []) as unknown as Array<{ meetings: JoinedMeeting | JoinedMeeting[] }>;
-  return rows
-    .map((row) => (Array.isArray(row.meetings) ? row.meetings[0] : row.meetings))
-    .filter((meeting): meeting is JoinedMeeting => Boolean(meeting))
+  const nowIso = now.toISOString();
+  const supabase = getSupabaseBrowserClient();
+  // Mentorias realizadas no mês: individuais do cliente que já aconteceram + grupos com participação registrada.
+  const [individualResult, participationResult] = await Promise.all([
+    supabase.from("meetings").select("id, title, starts_at, type").eq("individual_mentee_id", menteeId).gte("starts_at", start).lte("starts_at", nowIso),
+    supabase.from("meeting_participations").select("meetings!inner(id, title, starts_at, type)").eq("mentee_id", menteeId).eq("attended", true).gte("meetings.starts_at", start).lt("meetings.starts_at", end),
+  ]);
+  [individualResult, participationResult].forEach((result) => assertNoError(result.error));
+  type JoinedMeeting = { id: string; title: string; starts_at: string; type: "individual" | "group" };
+  const byId = new Map<string, JoinedMeeting>();
+  for (const meeting of (individualResult.data ?? []) as JoinedMeeting[]) byId.set(meeting.id, meeting);
+  const participationRows = (participationResult.data ?? []) as unknown as Array<{ meetings: JoinedMeeting | JoinedMeeting[] }>;
+  for (const row of participationRows) {
+    const meeting = Array.isArray(row.meetings) ? row.meetings[0] : row.meetings;
+    if (meeting) byId.set(meeting.id, meeting);
+  }
+  return [...byId.values()]
     .map((meeting) => ({ title: meeting.title, startsAt: meeting.starts_at, type: meeting.type === "individual" ? "Individual" as const : "Grupo" as const }))
     .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
 }
@@ -328,9 +332,11 @@ function mapHistoryMaterial(row: MaterialRow): MenteeHistoryMaterial {
 
 export async function loadMenteeHistory(menteeId: string): Promise<MenteeHistoryEntry[]> {
   const supabase = getSupabaseBrowserClient();
+  // Histórico = o que já aconteceu; encontros futuros ficam de fora.
+  const nowIso = new Date().toISOString();
   const [individualResult, participationResult, materialsResult] = await Promise.all([
-    supabase.from("meetings").select("*, meeting_mentors(mentor_id, source, mentors(name))").eq("individual_mentee_id", menteeId),
-    supabase.from("meeting_participations").select("meetings!inner(*, meeting_mentors(mentor_id, source, mentors(name)))").eq("mentee_id", menteeId).eq("attended", true),
+    supabase.from("meetings").select("*, meeting_mentors(mentor_id, source, mentors(name))").eq("individual_mentee_id", menteeId).lte("starts_at", nowIso),
+    supabase.from("meeting_participations").select("meetings!inner(*, meeting_mentors(mentor_id, source, mentors(name)))").eq("mentee_id", menteeId).eq("attended", true).lte("meetings.starts_at", nowIso),
     supabase.from("mentee_materials").select("*").eq("mentee_id", menteeId),
   ]);
   [individualResult, participationResult, materialsResult].forEach((result) => assertNoError(result.error));

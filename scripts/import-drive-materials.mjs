@@ -151,15 +151,19 @@ try {
         fallbackDates.push(`${file.name} (${mentee.name})`);
       }
 
-      // Casamento material<->encontro: individuais do cliente cuja janela
-      // [starts_at - 15min, ends_at + 15min] contém happened_at; só candidato único vincula.
+      // Casamento material<->encontro: encontro individual do cliente mais próximo do horário
+      // do material, com tolerância de 3h — gravações começam antes/depois do horário agendado
+      // (ex.: gravação 15:40 de encontro marcado às 16:00). Distância medida até o intervalo do encontro.
       const happenedTime = new Date(happenedAt).getTime();
-      const candidates = (meetingsByMentee.get(mentee.id) ?? []).filter((meeting) => {
-        const windowStart = new Date(meeting.starts_at).getTime() - 15 * 60 * 1000;
-        const windowEnd = new Date(meeting.ends_at).getTime() + 15 * 60 * 1000;
-        return happenedTime >= windowStart && happenedTime <= windowEnd;
-      });
-      const meetingId = candidates.length === 1 ? candidates[0].id : null;
+      const tolerance = 3 * 60 * 60 * 1000;
+      let best = null;
+      for (const meeting of meetingsByMentee.get(mentee.id) ?? []) {
+        const startTime = new Date(meeting.starts_at).getTime();
+        const endTime = new Date(meeting.ends_at).getTime();
+        const distance = happenedTime < startTime ? startTime - happenedTime : happenedTime > endTime ? happenedTime - endTime : 0;
+        if (distance <= tolerance && (best === null || distance < best.distance)) best = { id: meeting.id, distance };
+      }
+      const meetingId = best ? best.id : null;
       if (!meetingId) withoutMeeting.push(`${file.name} (${mentee.name})`);
 
       materials.push({
