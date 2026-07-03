@@ -149,6 +149,14 @@ export async function updateMenteeRisk(input: Mentee) {
   return mapMentee(data as MenteeRow);
 }
 
+export async function updateMenteeStatus(input: Mentee): Promise<Mentee> {
+  const { data, error } = await getSupabaseBrowserClient().from("mentees").update({
+    status: statusToDb[input.status],
+  }).eq("id", input.id).select("*").single();
+  assertNoError(error);
+  return mapMentee(data as MenteeRow);
+}
+
 export async function createAchievement(input: Achievement) {
   const { data, error } = await getSupabaseBrowserClient().from("achievements").insert({
     mentee_id: input.menteeId,
