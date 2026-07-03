@@ -67,6 +67,44 @@ export async function POST(request: NextRequest) {
           individual_mentee_id = excluded.individual_mentee_id
       `, [event.eventId, event.calendarId, event.title, event.startsAt, event.endsAt, event.meetUrl, type, front, menteeId]);
     }
+    await database.query(`
+      delete from public.meeting_mentors link
+      using public.meetings meeting
+      where link.source = 'auto'
+        and link.meeting_id = meeting.id
+        and exists (
+          select 1 from current_calendar_sync_keys current_key
+          where current_key.calendar_id = meeting.google_calendar_id
+            and current_key.event_id = meeting.google_event_id
+        )
+        and link.mentor_id is distinct from (
+          select (array_agg(mentor.id))[1]
+          from public.mentors mentor
+          where mentor.front = meeting.front
+          group by mentor.front
+          having count(*) = 1
+        )
+    `);
+    await database.query(`
+      insert into public.meeting_mentors (meeting_id, mentor_id, source)
+      select meeting.id, front_mentor.mentor_id, 'auto'::public.mentor_link_source
+      from public.meetings meeting
+      join current_calendar_sync_keys current_key
+        on current_key.calendar_id = meeting.google_calendar_id
+        and current_key.event_id = meeting.google_event_id
+      join (
+        select front, (array_agg(id))[1] as mentor_id
+        from public.mentors
+        where front is not null
+        group by front
+        having count(*) = 1
+      ) front_mentor on front_mentor.front = meeting.front
+      where not exists (
+        select 1 from public.meeting_mentors existing_link
+        where existing_link.meeting_id = meeting.id
+      )
+      on conflict do nothing
+    `);
     const configuredCalendarIds = configuredCalendarSources().map((source) => source.sourceId);
     const removed = await database.query(`
       delete from public.meetings meeting
