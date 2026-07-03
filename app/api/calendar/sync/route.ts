@@ -10,18 +10,9 @@ function normalized(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
-export async function POST(request: NextRequest) {
-  const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  if (!token) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
-
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+async function runCalendarSync() {
   const connectionString = process.env.DATABASE_URL;
-  if (!supabaseUrl || !supabaseKey || !connectionString) return NextResponse.json({ error: "Configuração do servidor incompleta." }, { status: 500 });
-
-  const authClient = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false } });
-  const { data: authData, error: authError } = await authClient.auth.getUser(token);
-  if (authError || !authData.user) return NextResponse.json({ error: "Sessão inválida." }, { status: 401 });
+  if (!connectionString) throw new Error("Configuração do servidor incompleta.");
 
   const database = new pg.Client({ connectionString, ssl: connectionString.includes("localhost") ? false : { rejectUnauthorized: false }, connectionTimeoutMillis: 15_000 });
   try {
@@ -119,12 +110,45 @@ export async function POST(request: NextRequest) {
         )
     `, [configuredCalendarIds]);
     await database.query("commit");
-    return NextResponse.json({ synced: individual + group, individual, group, ignored, removed: removed.rowCount ?? 0 });
+    return { synced: individual + group, individual, group, ignored, removed: removed.rowCount ?? 0 };
   } catch (error) {
     await database.query("rollback").catch(() => undefined);
-    const message = error instanceof Error ? error.message : "Falha desconhecida.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    throw error;
   } finally {
     await database.end().catch(() => undefined);
+  }
+}
+
+export async function POST(request: NextRequest) {
+  const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  if (!token) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !supabaseKey) return NextResponse.json({ error: "Configuração do servidor incompleta." }, { status: 500 });
+
+  const authClient = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false } });
+  const { data: authData, error: authError } = await authClient.auth.getUser(token);
+  if (authError || !authData.user) return NextResponse.json({ error: "Sessão inválida." }, { status: 401 });
+
+  try {
+    return NextResponse.json(await runCalendarSync());
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Falha desconhecida.";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+// Gatilho do cron da Vercel (GET horário) — autenticado por CRON_SECRET, não por sessão da equipe.
+export async function GET(request: NextRequest) {
+  const secret = process.env.CRON_SECRET;
+  const header = request.headers.get("authorization");
+  if (!secret || header !== `Bearer ${secret}`) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
+
+  try {
+    return NextResponse.json(await runCalendarSync());
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Falha desconhecida.";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
