@@ -1,8 +1,8 @@
 import type { Achievement, Meeting, Mentee, Mentor, Risk } from "@/lib/types";
-import { frontDbToLabel } from "@/lib/meeting-front";
+import { frontDbToLabel, type MeetingFront } from "@/lib/meeting-front";
 import { briefingFieldKeys } from "@/lib/briefing-schema";
 import { getSupabaseBrowserClient } from "./client";
-import type { AchievementRow, BriefingRow, MenteeRow, MentorRow, MeetingRow } from "./database.types";
+import type { AchievementRow, BriefingRow, MaterialRow, MenteeRow, MentorRow, MeetingRow } from "./database.types";
 
 const statusFromDb = { active: "Ativo", paused: "Pausado", closed: "Encerrado" } as const;
 const statusToDb = { Ativo: "active", Pausado: "paused", Encerrado: "closed" } as const;
@@ -75,11 +75,13 @@ function assertNoError(error: { message: string } | null) {
 
 export async function loadAppData() {
   const supabase = getSupabaseBrowserClient();
+  // Mesma borda inferior da janela ativa do sync (activeSyncWindow() em lib/google-calendar.ts).
+  const activeWindowStart = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const [mentorsResult, menteesResult, meetingsResult, meetingMentorsResult, achievementsResult] = await Promise.all([
     supabase.from("mentors").select("*").order("name"),
     supabase.from("mentees").select("*").order("name"),
-    supabase.from("meetings").select("*").order("starts_at"),
-    supabase.from("meeting_mentors").select("*"),
+    supabase.from("meetings").select("*").gte("starts_at", activeWindowStart).order("starts_at"),
+    supabase.from("meeting_mentors").select("meeting_id, mentor_id, source, meetings!inner(starts_at)").gte("meetings.starts_at", activeWindowStart),
     supabase.from("achievements").select("*").order("achieved_at", { ascending: false }),
   ]);
   [mentorsResult, menteesResult, meetingsResult, meetingMentorsResult, achievementsResult].forEach((result) => assertNoError(result.error));
@@ -310,6 +312,81 @@ export async function loadMenteeMonthMeetings(menteeId: string): Promise<MonthMe
     .filter((meeting): meeting is JoinedMeeting => Boolean(meeting))
     .map((meeting) => ({ title: meeting.title, startsAt: meeting.starts_at, type: meeting.type === "individual" ? "Individual" as const : "Grupo" as const }))
     .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
+}
+
+export interface MenteeHistoryMaterial { id: string; type: "recording" | "summary"; title: string; driveUrl: string; happenedAt: string }
+export type MenteeHistoryEntry =
+  | { kind: "meeting"; id: string; title: string; startsAt: string; type: "Individual" | "Grupo"; front: MeetingFront; mentorName: string | null; materials: MenteeHistoryMaterial[] }
+  | { kind: "material"; happenedAt: string; material: MenteeHistoryMaterial };
+
+type HistoryMentorLink = { mentor_id: string; source: "auto" | "manual"; mentors: { name: string } | { name: string }[] | null };
+type HistoryMeetingRow = MeetingRow & { meeting_mentors: HistoryMentorLink[] };
+
+function mapHistoryMaterial(row: MaterialRow): MenteeHistoryMaterial {
+  return { id: row.id, type: row.type, title: row.title, driveUrl: row.drive_url, happenedAt: row.happened_at };
+}
+
+export async function loadMenteeHistory(menteeId: string): Promise<MenteeHistoryEntry[]> {
+  const supabase = getSupabaseBrowserClient();
+  const [individualResult, participationResult, materialsResult] = await Promise.all([
+    supabase.from("meetings").select("*, meeting_mentors(mentor_id, source, mentors(name))").eq("individual_mentee_id", menteeId),
+    supabase.from("meeting_participations").select("meetings!inner(*, meeting_mentors(mentor_id, source, mentors(name)))").eq("mentee_id", menteeId).eq("attended", true),
+    supabase.from("mentee_materials").select("*").eq("mentee_id", menteeId),
+  ]);
+  [individualResult, participationResult, materialsResult].forEach((result) => assertNoError(result.error));
+
+  // Merge por id: individual com participação registrada aparece nas duas consultas.
+  const rowsById = new Map<string, HistoryMeetingRow>();
+  for (const row of (individualResult.data ?? []) as unknown as HistoryMeetingRow[]) rowsById.set(row.id, row);
+  const participationRows = (participationResult.data ?? []) as unknown as Array<{ meetings: HistoryMeetingRow | HistoryMeetingRow[] | null }>;
+  for (const row of participationRows) {
+    const meeting = Array.isArray(row.meetings) ? row.meetings[0] : row.meetings;
+    if (meeting) rowsById.set(meeting.id, meeting);
+  }
+
+  // Dedupe por chave (mesma regra da carga geral), preservando vínculo de mentor de qualquer cópia.
+  const mentorNames = new Map<string, string>();
+  const dedupedByKey = new Map<string, { meeting: Meeting; materials: MenteeHistoryMaterial[] }>();
+  const meetingIdToKey = new Map<string, string>();
+  for (const row of rowsById.values()) {
+    const links = (row.meeting_mentors ?? []).map((link) => {
+      const mentor = Array.isArray(link.mentors) ? link.mentors[0] : link.mentors;
+      if (mentor) mentorNames.set(link.mentor_id, mentor.name);
+      return { mentorId: link.mentor_id, source: link.source };
+    });
+    const meeting = mapMeeting(row, links);
+    const key = meetingKey(meeting);
+    meetingIdToKey.set(row.id, key);
+    const existing = dedupedByKey.get(key);
+    if (!existing) {
+      dedupedByKey.set(key, { meeting, materials: [] });
+      continue;
+    }
+    existing.meeting.mentorIds = [...new Set([...existing.meeting.mentorIds, ...meeting.mentorIds])];
+  }
+
+  // Casamento de materiais: meeting_id de qualquer cópia entra na entrada deduplicada; sem correspondência vira entrada avulsa.
+  const looseMaterials: MenteeHistoryEntry[] = [];
+  for (const row of (materialsResult.data ?? []) as MaterialRow[]) {
+    const key = row.meeting_id ? meetingIdToKey.get(row.meeting_id) : undefined;
+    const entry = key ? dedupedByKey.get(key) : undefined;
+    if (entry) entry.materials.push(mapHistoryMaterial(row));
+    else looseMaterials.push({ kind: "material", happenedAt: row.happened_at, material: mapHistoryMaterial(row) });
+  }
+
+  const entries: MenteeHistoryEntry[] = [...dedupedByKey.values()].map(({ meeting, materials }) => ({
+    kind: "meeting" as const,
+    id: meeting.id,
+    title: meeting.title,
+    startsAt: meeting.startsAt,
+    type: meeting.type,
+    front: meeting.front,
+    mentorName: meeting.mentorIds.length > 0 ? mentorNames.get(meeting.mentorIds[0]) ?? null : null,
+    materials: [...materials].sort((a, b) => (a.type === b.type ? 0 : a.type === "recording" ? -1 : 1)),
+  }));
+  entries.push(...looseMaterials);
+  const entryTime = (entry: MenteeHistoryEntry) => new Date(entry.kind === "meeting" ? entry.startsAt : entry.happenedAt).getTime();
+  return entries.sort((a, b) => entryTime(b) - entryTime(a));
 }
 
 export async function updateMenteeContact(input: Mentee): Promise<Mentee> {

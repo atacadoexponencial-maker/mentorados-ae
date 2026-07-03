@@ -192,3 +192,18 @@ html,body{background:#f4f1eb;color:#1f1f1f}
 .mentor-stat-row strong{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mentor-stat-row span,.mentor-stat-row b{font-size:12px;text-align:right;color:#68736c}
 .mentor-stat-row b{font-weight:700;color:var(--ink)}
+
+/* Ficha do mentorado — aba Histórico */
+.history-timeline{display:flex;flex-direction:column;gap:9px;margin-top:12px}
+.history-item{display:flex;flex-direction:column;gap:4px;padding:11px 13px;background:#f4f6f2;border-radius:9px}
+.history-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.history-item small{font-size:10px;color:#8a918b}
+.history-item b{font-size:12px;color:#2c352f;overflow-wrap:anywhere}
+.history-links{display:flex;flex-wrap:wrap;gap:12px;margin-top:3px}
+.history-links a{color:var(--green);font-size:10px;font-weight:600;text-decoration:none;display:flex;align-items:center;gap:5px;width:max-content}
+.history-loose{flex-direction:row;align-items:flex-start;gap:10px;background:#f3eee5;border:1px solid #ece3d3}
+.history-loose>svg{color:#98733d;flex-shrink:0;margin-top:2px}
+.history-loose>div{display:flex;flex-direction:column;gap:4px;min-width:0}
+.history-loose b{color:#5d4a2e}
+.history-loose small{color:#817a6f}
+.history-error{margin:12px 0 0}

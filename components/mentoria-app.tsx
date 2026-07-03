@@ -2,14 +2,14 @@
 
 import {
   AlertTriangle, ArrowLeft, ArrowUpDown, Award, Bell, CalendarDays, Check,
-  ChevronRight, CircleHelp, Clock3, Copy, ExternalLink, Filter, Link2,
+  ChevronRight, CircleHelp, Clock3, Copy, ExternalLink, FileText, Filter, Link2,
   LayoutDashboard, LogOut, Medal, Menu, MoreHorizontal, Pencil, Plus, RefreshCw, Search, Settings,
   Sparkles, Target, Trophy, UserCheck, Users, Video, X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Achievement, Meeting, Mentee, MenteeStatus, Mentor, Risk } from "@/lib/types";
 import { briefingSections, briefingLabels } from "@/lib/briefing-schema";
-import { createAchievement, createMentee, generateBriefingLink, loadBriefing, loadMenteeMonthMeetings, loadMentorMonthStats, markBriefingReviewed, loadAppData, saveParticipation, syncGoogleCalendar, updateMeetingMentor, updateMenteeContact, updateMenteeRisk, updateMenteeStatus, type MenteeBriefing, type MentorMonthStats, type MonthMeeting } from "@/lib/supabase/data";
+import { createAchievement, createMentee, generateBriefingLink, loadBriefing, loadMenteeHistory, loadMenteeMonthMeetings, loadMentorMonthStats, markBriefingReviewed, loadAppData, saveParticipation, syncGoogleCalendar, updateMeetingMentor, updateMenteeContact, updateMenteeRisk, updateMenteeStatus, type MenteeBriefing, type MenteeHistoryEntry, type MentorMonthStats, type MonthMeeting } from "@/lib/supabase/data";
 
 type View = "dashboard" | "mentees" | "agenda" | "achievements";
 
@@ -337,7 +337,7 @@ function AchievementsView({ achievements, mentees, add }: { achievements: Achiev
 }
 
 function MenteeDrawer({ mentee, mentors, allMentees, achievements, close, update, updateContact, updateStatus }: { mentee: Mentee; mentors: Mentor[]; allMentees: Mentee[]; achievements: Achievement[]; close: () => void; update: (m: Mentee) => void; updateContact: (m: Mentee) => void; updateStatus: (m: Mentee) => void }) {
-  const [tab, setTab] = useState<"geral" | "briefing">("geral");
+  const [tab, setTab] = useState<"geral" | "briefing" | "historico">("geral");
   const [editingRisk, setEditingRisk] = useState(false);
   const [risk, setRisk] = useState(mentee.risk);
   const [reason, setReason] = useState(mentee.riskReason);
@@ -359,8 +359,8 @@ function MenteeDrawer({ mentee, mentors, allMentees, achievements, close, update
   }, [mentee.id]);
 
   return <div className="modal-layer"><div className="modal-backdrop" onClick={close} /><aside className="drawer"><div className="drawer-top"><button className="back-button" onClick={close}><ArrowLeft size={18} /></button><span>Ficha do mentorado</span><button className="icon-button" onClick={close}><X size={19} /></button></div><div className="drawer-body"><div className="mentee-hero"><Avatar item={mentee} large /><div><h2>{mentee.name}</h2><p>{mentee.company} · {mentee.role}</p><label className="status-select"><span className={`status-dot ${mentee.status.toLowerCase()}`} /><select value={mentee.status} onChange={(e) => updateStatus({ ...mentee, status: e.target.value as MenteeStatus })} aria-label="Status do mentorado"><option>Ativo</option><option>Pausado</option><option>Encerrado</option></select></label></div></div>
-    <div className="drawer-tabs"><button className={tab === "geral" ? "active" : ""} onClick={() => setTab("geral")}>Visão geral</button><button className={tab === "briefing" ? "active" : ""} onClick={() => setTab("briefing")}>Briefing</button></div>
-    {tab === "briefing" ? <MenteeBriefingPanel menteeId={mentee.id} /> : <>
+    <div className="drawer-tabs"><button className={tab === "geral" ? "active" : ""} onClick={() => setTab("geral")}>Visão geral</button><button className={tab === "briefing" ? "active" : ""} onClick={() => setTab("briefing")}>Briefing</button><button className={tab === "historico" ? "active" : ""} onClick={() => setTab("historico")}>Histórico</button></div>
+    {tab === "briefing" ? <MenteeBriefingPanel menteeId={mentee.id} /> : tab === "historico" ? <MenteeHistoryPanel menteeId={mentee.id} /> : <>
     <div className="detail-meta"><div><small>NA JORNADA DESDE</small><b>{fullDate.format(new Date(mentee.joinedAt + "T12:00:00"))}</b></div><div><small>ÚLTIMA PARTICIPAÇÃO</small><b>{fullDate.format(new Date(mentee.lastParticipation + "T12:00:00"))}</b></div></div>
     {mentee.briefing && <section className="detail-section"><span>OBSERVAÇÕES INTERNAS</span><p>{mentee.briefing}</p></section>}
     <section className="detail-section"><div className="detail-title"><span>CONTATO E MATERIAIS</span>{!editingContact && <button className="edit-button" onClick={() => setEditingContact(true)}><Pencil size={13} /> Editar</button>}</div>{editingContact ? <div className="risk-form"><label>Instagram<input value={instagram} onChange={(e) => setInstagram(e.target.value)} placeholder="https://instagram.com/..." /></label><label>Pasta do cliente<input value={folder} onChange={(e) => setFolder(e.target.value)} placeholder="Link da pasta (Drive, etc.)" /></label><div><button className="ghost-button" onClick={() => { setInstagram(mentee.instagramUrl ?? ""); setFolder(mentee.folderUrl ?? ""); setEditingContact(false); }}>Cancelar</button><button className="primary-button small" onClick={() => { updateContact({ ...mentee, instagramUrl: instagram || undefined, folderUrl: folder || undefined }); setEditingContact(false); }}>Salvar</button></div></div> : <div className="resource-grid"><div><small>E-MAIL</small><b>{mentee.email || "Não informado"}</b></div><div><small>PRODUTO</small><b>{mentee.product || "Não informado"}</b></div>{mentee.instagramUrl && <a href={mentee.instagramUrl} target="_blank" rel="noreferrer">Instagram <ExternalLink size={13} /></a>}{mentee.folderUrl && <a href={mentee.folderUrl} target="_blank" rel="noreferrer">Pasta do cliente <ExternalLink size={13} /></a>}</div>}</section>
@@ -503,6 +503,33 @@ function MenteeBriefingPanel({ menteeId }: { menteeId: string }) {
       {answeredSections.length ? <div className="briefing-answers">{answeredSections.map((section) => <div key={section.title}><h4>{section.title}</h4>{section.fields.map((field) => <div className="briefing-answer" key={field.key}><small>{briefingLabels[field.key]}</small><p>{briefing!.answers[field.key]}</p></div>)}</div>)}</div>
         : <p className="muted">{briefing?.status === "filled" ? "Sem respostas registradas." : "O mentorado ainda não preencheu o briefing."}</p>}
     </>}
+  </section>;
+}
+
+function MenteeHistoryPanel({ menteeId }: { menteeId: string }) {
+  const [entries, setEntries] = useState<MenteeHistoryEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError(false);
+    loadMenteeHistory(menteeId)
+      .then((data) => { if (active) { setEntries(data); setLoading(false); } })
+      .catch(() => { if (active) { setError(true); setLoading(false); } });
+    return () => { active = false; };
+  }, [menteeId, reloadKey]);
+
+  return <section className="detail-section">
+    <div className="detail-title"><span>HISTÓRICO</span></div>
+    {loading ? <p className="muted">Carregando...</p>
+      : error ? <div className="data-error history-error"><span>Não foi possível carregar o histórico.</span><button onClick={() => setReloadKey((key) => key + 1)}><RefreshCw size={15} /> Tentar novamente</button></div>
+      : entries.length ? <div className="history-timeline">{entries.map((entry) => entry.kind === "meeting"
+        ? <div className="history-item" key={`meeting-${entry.id}`}><div className="history-head"><small>{fullDate.format(new Date(entry.startsAt))} · {time.format(new Date(entry.startsAt))}</small><span className={`type-badge ${entry.type === "Grupo" ? "group" : ""}`}>{entry.type}</span></div><b>{entry.title}</b><small>{entry.front} · {entry.mentorName ?? "Sem mentor"}</small>{entry.materials.length > 0 && <div className="history-links">{entry.materials.map((material) => <a key={material.id} href={material.driveUrl} target="_blank" rel="noreferrer">{material.type === "recording" ? <><Video size={13} /> Assistir gravação</> : <><FileText size={13} /> Resumo da reunião</>}</a>)}</div>}</div>
+        : <div className="history-item history-loose" key={`material-${entry.material.id}`}>{entry.material.type === "recording" ? <Video size={16} /> : <FileText size={16} />}<div><small>{fullDate.format(new Date(entry.happenedAt))} · {time.format(new Date(entry.happenedAt))}</small><b>{entry.material.title}</b><div className="history-links"><a href={entry.material.driveUrl} target="_blank" rel="noreferrer">{entry.material.type === "recording" ? "Assistir gravação" : "Resumo da reunião"}</a></div></div></div>)}</div>
+      : <p className="muted">Nenhum encontro registrado ainda.</p>}
   </section>;
 }
 
