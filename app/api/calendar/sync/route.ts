@@ -39,7 +39,8 @@ async function runCalendarSync() {
         });
         return emailMatch || (name.length >= 4 && eventText.includes(name)) || (company.length >= 4 && eventText.includes(company)) || aliasMatch;
       });
-      const ignoreByTitle = /(workshop\s+ae|reuni[aã]o\s+interna|daily\s+do\s+time|\balmo[cç]o\b|bloqueio\s+de\s+agenda|reuni[aã]o\s+comercial|1:1\s*\|)/i.test(event.title);
+      // "R1 ..."/"R2 ..." no início do título = reunião de venda (pré-cliente), não é mentoria.
+      const ignoreByTitle = /(workshop\s+ae|reuni[aã]o\s+interna|daily\s+do\s+time|\balmo[cç]o\b|bloqueio\s+de\s+agenda|reuni[aã]o\s+comercial|1:1\s*\|)/i.test(event.title) || /^\s*r\d+\s/i.test(event.title);
       const groupByTitle = /(plant[aã]o\s+atacado\s+exponencial|mentoria\s+em\s+grupo|cl[ií]nica\s+de\s+vendas)/i.test(event.title);
       const menteeId = !ignoreByTitle && !groupByTitle && matches.length === 1 ? matches[0].id : null;
       if (ignoreByTitle || (!menteeId && !groupByTitle)) { ignored += 1; continue; }
