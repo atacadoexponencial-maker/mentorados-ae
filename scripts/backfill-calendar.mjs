@@ -144,7 +144,7 @@ try {
   await database.connect();
   // Diferença INTENCIONAL ante o sync (route.ts:22): sem `where status <> 'closed'` —
   // o histórico pertence ao passado; cliente hoje encerrado tinha encontros quando era ativo.
-  const mentees = await database.query("select id, name, company, lower(email) as email from public.mentees");
+  const mentees = await database.query("select id, name, company, lower(email) as email, joined_at from public.mentees");
   await database.query("begin");
   await database.query("create temp table backfill_calendar_keys (calendar_id text, event_id text, primary key (calendar_id, event_id)) on commit drop");
 
@@ -157,11 +157,20 @@ try {
   for (const event of events) {
     // Matching — cópia de app/api/calendar/sync/route.ts:30-36
     const eventText = normalize(`${event.title} ${event.description}`);
+    const eventStart = new Date(event.startsAt).getTime();
     const matches = mentees.rows.filter((mentee) => {
       const emailMatch = mentee.email && event.attendeeEmails.includes(mentee.email);
       const name = normalize(mentee.name);
       const company = normalize(mentee.company);
-      return emailMatch || (name.length >= 4 && eventText.includes(name)) || (company.length >= 4 && eventText.includes(company));
+      const companyMatch = company.length >= 4 && eventText.includes(company);
+      // Guarda de entrada SÓ para casamento por nome de pessoa: primeiro nome é ambíguo
+      // (ex.: outra "Adriana" de 2024), então evento anterior à entrada do cliente
+      // (folga de 30 dias) não casa por nome. E-mail e marca são identificadores fortes
+      // e valem para qualquer época — clientes com histórico anterior à entrada registrada
+      // (renovações/datas aproximadas na planilha) mantêm o histórico completo.
+      const joinedCutoff = new Date(mentee.joined_at).getTime() - 30 * 24 * 60 * 60 * 1000;
+      const nameMatch = name.length >= 4 && eventText.includes(name) && eventStart >= joinedCutoff;
+      return emailMatch || nameMatch || companyMatch;
     });
     // Regexes de ignore e grupo — cópia de app/api/calendar/sync/route.ts:37-38
     const ignoreByTitle = /(workshop\s+ae|reuni[aã]o\s+interna|daily\s+do\s+time|\balmo[cç]o\b|bloqueio\s+de\s+agenda|reuni[aã]o\s+comercial|1:1\s*\|)/i.test(event.title);
