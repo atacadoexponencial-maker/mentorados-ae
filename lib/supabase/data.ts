@@ -17,7 +17,7 @@ function mapMentor(row: MentorRow): Mentor {
   return { id: row.id, name: row.name, initials: initials(row.name), color: row.color, contact: row.email };
 }
 
-function mapMentee(row: MenteeRow, otherMentorIds: string[] = []): Mentee {
+function mapMentee(row: MenteeRow): Mentee {
   return {
     id: row.id,
     name: row.name,
@@ -25,8 +25,6 @@ function mapMentee(row: MenteeRow, otherMentorIds: string[] = []): Mentee {
     company: row.company,
     role: row.role || row.product || "Cliente",
     joinedAt: row.joined_at,
-    mainMentorId: row.main_mentor_id || "unassigned",
-    otherMentorIds,
     briefing: row.briefing,
     status: statusFromDb[row.status],
     risk: riskFromDb[row.risk],
@@ -76,19 +74,15 @@ function assertNoError(error: { message: string } | null) {
 
 export async function loadAppData() {
   const supabase = getSupabaseBrowserClient();
-  const [mentorsResult, menteesResult, linksResult, meetingsResult, meetingMentorsResult, achievementsResult] = await Promise.all([
+  const [mentorsResult, menteesResult, meetingsResult, meetingMentorsResult, achievementsResult] = await Promise.all([
     supabase.from("mentors").select("*").order("name"),
     supabase.from("mentees").select("*").order("name"),
-    supabase.from("mentee_mentors").select("*"),
     supabase.from("meetings").select("*").order("starts_at"),
     supabase.from("meeting_mentors").select("*"),
     supabase.from("achievements").select("*").order("achieved_at", { ascending: false }),
   ]);
-  [mentorsResult, menteesResult, linksResult, meetingsResult, meetingMentorsResult, achievementsResult].forEach((result) => assertNoError(result.error));
+  [mentorsResult, menteesResult, meetingsResult, meetingMentorsResult, achievementsResult].forEach((result) => assertNoError(result.error));
 
-  const menteeMentors = new Map<string, string[]>();
-  const menteeLinks = (linksResult.data ?? []) as Array<{ mentee_id: string; mentor_id: string }>;
-  for (const link of menteeLinks) menteeMentors.set(link.mentee_id, [...(menteeMentors.get(link.mentee_id) ?? []), link.mentor_id]);
   const meetingMentors = new Map<string, string[]>();
   const meetingLinks = (meetingMentorsResult.data ?? []) as Array<{ meeting_id: string; mentor_id: string }>;
   for (const link of meetingLinks) meetingMentors.set(link.meeting_id, [...(meetingMentors.get(link.meeting_id) ?? []), link.mentor_id]);
@@ -107,7 +101,7 @@ export async function loadAppData() {
 
   return {
     mentors: ((mentorsResult.data ?? []) as MentorRow[]).map(mapMentor),
-    mentees: ((menteesResult.data ?? []) as MenteeRow[]).map((row) => mapMentee(row, menteeMentors.get(row.id))),
+    mentees: ((menteesResult.data ?? []) as MenteeRow[]).map(mapMentee),
     meetings: [...dedupedMeetings.values()].sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()),
     achievements: ((achievementsResult.data ?? []) as AchievementRow[]).map(mapAchievement),
   };
@@ -150,7 +144,7 @@ export async function updateMenteeRisk(input: Mentee) {
     next_action: input.nextAction,
   }).eq("id", input.id).select("*").single();
   assertNoError(error);
-  return mapMentee(data as MenteeRow, input.otherMentorIds);
+  return mapMentee(data as MenteeRow);
 }
 
 export async function createAchievement(input: Achievement) {
@@ -290,5 +284,5 @@ export async function updateMenteeContact(input: Mentee): Promise<Mentee> {
     folder_url: input.folderUrl ?? null,
   }).eq("id", input.id).select("*").single();
   assertNoError(error);
-  return mapMentee(data as MenteeRow, input.otherMentorIds);
+  return mapMentee(data as MenteeRow);
 }

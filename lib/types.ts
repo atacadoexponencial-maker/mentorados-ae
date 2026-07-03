@@ -18,8 +18,6 @@ export interface Mentee {
   company: string;
   role: string;
   joinedAt: string;
-  mainMentorId: string;
-  otherMentorIds: string[];
   briefing: string;
   status: MenteeStatus;
   risk: Risk;
