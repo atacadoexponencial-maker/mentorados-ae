@@ -63,13 +63,23 @@ function eventDate(value: calendar_v3.Schema$EventDateTime | undefined, fallback
   return fallback.toISOString();
 }
 
-export async function listWorkspaceEvents(): Promise<CalendarEventInput[]> {
+export interface SyncWindow {
+  timeMin: string;
+  timeMax: string;
+}
+
+export function activeSyncWindow(): SyncWindow {
+  return {
+    timeMin: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+    timeMax: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
+  };
+}
+
+export async function listWorkspaceEvents(window: SyncWindow = activeSyncWindow()): Promise<CalendarEventInput[]> {
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL;
   if (!email) throw new Error("GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL nao configurado.");
 
   const sources = configuredCalendarSources();
-  const timeMin = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const timeMax = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
   const collected: CalendarEventInput[] = [];
 
   for (const source of sources) {
@@ -85,8 +95,8 @@ export async function listWorkspaceEvents(): Promise<CalendarEventInput[]> {
     do {
       const response = await calendar.events.list({
         calendarId: source.calendarId,
-        timeMin,
-        timeMax,
+        timeMin: window.timeMin,
+        timeMax: window.timeMax,
         singleEvents: true,
         orderBy: "startTime",
         maxResults: 250,

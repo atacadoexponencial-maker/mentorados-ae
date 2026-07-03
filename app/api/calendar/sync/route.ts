@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import pg from "pg";
-import { configuredCalendarSources, listWorkspaceEvents } from "@/lib/google-calendar";
+import { activeSyncWindow, configuredCalendarSources, listWorkspaceEvents } from "@/lib/google-calendar";
 import { classifyMeetingFront, frontLabelToDb } from "@/lib/meeting-front";
 
 export const runtime = "nodejs";
@@ -16,7 +16,8 @@ async function runCalendarSync() {
 
   const database = new pg.Client({ connectionString, ssl: connectionString.includes("localhost") ? false : { rejectUnauthorized: false }, connectionTimeoutMillis: 15_000 });
   try {
-    const events = await listWorkspaceEvents();
+    const window = activeSyncWindow();
+    const events = await listWorkspaceEvents(window);
     await database.connect();
     const menteesResult = await database.query("select id, name, company, lower(email) as email from public.mentees where status <> 'closed'");
     await database.query("begin");
@@ -101,6 +102,8 @@ async function runCalendarSync() {
       delete from public.meetings meeting
       where meeting.google_event_id is not null
         and meeting.google_calendar_id = any($1::text[])
+        and meeting.starts_at >= $2::timestamptz
+        and meeting.starts_at <= $3::timestamptz
         and meeting.attendance_recorded_at is null
         and not exists (select 1 from public.meeting_participations participation where participation.meeting_id = meeting.id)
         and not exists (
@@ -108,7 +111,7 @@ async function runCalendarSync() {
           where current_key.calendar_id = meeting.google_calendar_id
             and current_key.event_id = meeting.google_event_id
         )
-    `, [configuredCalendarIds]);
+    `, [configuredCalendarIds, window.timeMin, window.timeMax]);
     await database.query("commit");
     return { synced: individual + group, individual, group, ignored, removed: removed.rowCount ?? 0 };
   } catch (error) {
