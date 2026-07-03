@@ -183,9 +183,15 @@ try {
       const nameMatch = name.length >= 4 && eventText.includes(name) && eventStart >= joinedCutoff;
       return emailMatch || nameMatch || companyMatch || aliasMatch;
     });
-    // Regexes de ignore e grupo — cópia de app/api/calendar/sync/route.ts:42-44
-    // "R1 ..."/"R2 ..." no início do título = reunião de venda (pré-cliente), não é mentoria.
-    const ignoreByTitle = /(workshop\s+ae|reuni[aã]o\s+interna|daily\s+do\s+time|\balmo[cç]o\b|bloqueio\s+de\s+agenda|reuni[aã]o\s+comercial|1:1\s*\|)/i.test(event.title) || /^\s*r\d+\s/i.test(event.title);
+    // Regexes de ignore e grupo — cópia fiel de app/api/calendar/sync/route.ts (ignoreByTitle/groupByTitle).
+    // Regras da Marcelle (2026-07-03): R1/R2 = venda; EXT = externa operacional; CRM/Kommo = ferramenta;
+    // Entrevista = seleção para o cliente. Nenhuma conta como mentoria.
+    const ignoreByTitle = /(workshop\s+ae|reuni[aã]o\s+interna|daily\s+do\s+time|\balmo[cç]o\b|bloqueio\s+de\s+agenda|reuni[aã]o\s+comercial|1:1\s*\|)/i.test(event.title)
+      || /^\s*r\d+\s/i.test(event.title)
+      || /^\s*ext\s*\|/i.test(event.title)
+      || /\bcrm\b/i.test(event.title)
+      || /kommo/i.test(event.title)
+      || /^\s*entrevistas?\b/i.test(event.title);
     const groupByTitle = /(plant[aã]o\s+atacado\s+exponencial|mentoria\s+em\s+grupo|cl[ií]nica\s+de\s+vendas)/i.test(event.title);
     const menteeId = !ignoreByTitle && !groupByTitle && matches.length === 1 ? matches[0].id : null;
     // Contadores separados (diferente do sync, que agrega tudo em `ignored`):
