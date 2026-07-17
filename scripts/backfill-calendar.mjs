@@ -114,7 +114,9 @@ for (const source of sources) {
     });
 
     for (const event of response.data.items ?? []) {
-      // Cancelados/sem id descartados na coleta — cópia de lib/google-calendar.ts:107
+      // Cancelados/sem id descartados na coleta. O lib (lib/google-calendar.ts) passou a usar
+      // showDeleted: true e a separar as chaves canceladas para o delete conservador do sync;
+      // o backfill segue descartando cancelados de propósito — não executa limpeza.
       if (!event.id || event.status === "cancelled") continue;
       const startsAt = eventDate(event.start, new Date());
       let endsAt = eventDate(event.end, new Date(new Date(startsAt).getTime() + 60 * 60 * 1000));
@@ -207,8 +209,11 @@ try {
 
     await database.query("insert into backfill_calendar_keys (calendar_id, event_id) values ($1, $2) on conflict do nothing", [event.calendarId, event.eventId]);
 
-    // Upsert — SQL idêntico ao de app/api/calendar/sync/route.ts:52-65
-    // (mesma identidade calendário+evento: reexecuções e convivência com o sync não duplicam)
+    // Upsert — mesma identidade calendário+evento do sync (app/api/calendar/sync/route.ts):
+    // reexecuções e convivência com o sync não duplicam. Divergência INTENCIONAL: o sync tem
+    // uma guarda no ON CONFLICT que congela type/individual_mentee_id de meetings vinculadas a
+    // mentorado closed; aqui ela não se aplica porque o universo de matching inclui closed
+    // (query de mentees acima), então o vínculo nunca "sai do universo".
     await database.query(`
       insert into public.meetings (
         google_event_id, google_calendar_id, title, starts_at, ends_at,

@@ -16,6 +16,14 @@ function privateKey() {
   return `-----BEGIN PRIVATE KEY-----\n${raw.replace(/\s/g, "").match(/.{1,64}/g)?.join("\n")}\n-----END PRIVATE KEY-----\n`;
 }
 
+// JWT de service account com domain-wide delegation, impersonando `subject`.
+// Reutilizado pelo cliente do Google Meet (lib/google-meet.ts).
+export function workspaceJwt(subject: string, scopes: string[]) {
+  const email = process.env.GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL;
+  if (!email) throw new Error("GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL nao configurado.");
+  return new google.auth.JWT({ email, key: privateKey(), subject, scopes });
+}
+
 function configuredSubjects() {
   const subjects = (process.env.GOOGLE_WORKSPACE_SUBJECTS || process.env.GOOGLE_WORKSPACE_SUBJECT || "")
     .split(",")
@@ -75,20 +83,18 @@ export function activeSyncWindow(): SyncWindow {
   };
 }
 
-export async function listWorkspaceEvents(window: SyncWindow = activeSyncWindow()): Promise<CalendarEventInput[]> {
-  const email = process.env.GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL;
-  if (!email) throw new Error("GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL nao configurado.");
+export interface CancelledEventKey {
+  calendarId: string;
+  eventId: string;
+}
 
+export async function listWorkspaceEvents(window: SyncWindow = activeSyncWindow()): Promise<{ events: CalendarEventInput[]; cancelledKeys: CancelledEventKey[] }> {
   const sources = configuredCalendarSources();
   const collected: CalendarEventInput[] = [];
+  const cancelledKeys: CancelledEventKey[] = [];
 
   for (const source of sources) {
-    const auth = new google.auth.JWT({
-      email,
-      key: privateKey(),
-      subject: source.subject,
-      scopes: [eventScope],
-    });
+    const auth = workspaceJwt(source.subject, [eventScope]);
     const calendar = google.calendar({ version: "v3", auth });
 
     let pageToken: string | undefined;
@@ -100,11 +106,17 @@ export async function listWorkspaceEvents(window: SyncWindow = activeSyncWindow(
         singleEvents: true,
         orderBy: "startTime",
         maxResults: 250,
+        showDeleted: true,
         pageToken,
       });
 
       for (const event of response.data.items ?? []) {
-        if (!event.id || event.status === "cancelled") continue;
+        if (!event.id) continue;
+        if (event.status === "cancelled") {
+          // Evidência positiva de cancelamento: só a chave importa (payload mínimo do Google).
+          cancelledKeys.push({ calendarId: source.sourceId, eventId: event.id });
+          continue;
+        }
         const start = eventDate(event.start, new Date());
         let end = eventDate(event.end, new Date(new Date(start).getTime() + 60 * 60 * 1000));
         if (new Date(end) <= new Date(start)) end = new Date(new Date(start).getTime() + 60 * 60 * 1000).toISOString();
@@ -129,5 +141,22 @@ export async function listWorkspaceEvents(window: SyncWindow = activeSyncWindow(
     } while (pageToken);
   }
 
-  return collected;
+  return { events: collected, cancelledKeys };
+}
+
+// Verifica um evento individualmente — usado pelo delete conservador do sync para
+// confirmar cancelamento quando o evento sumiu da listagem (ex.: série apagada inteira).
+export async function fetchEventStatus(subject: string, calendarId: string, eventId: string): Promise<"active" | "cancelled" | "missing"> {
+  const auth = workspaceJwt(subject, [eventScope]);
+  const calendar = google.calendar({ version: "v3", auth });
+
+  try {
+    const response = await calendar.events.get({ calendarId, eventId });
+    return response.data.status === "cancelled" ? "cancelled" : "active";
+  } catch (error) {
+    const status = (error as { code?: number; response?: { status?: number } }).code
+      ?? (error as { response?: { status?: number } }).response?.status;
+    if (status === 404 || status === 410) return "missing";
+    throw error;
+  }
 }

@@ -53,6 +53,7 @@ function mapMeeting(row: MeetingRow, links: Array<{ mentorId: string; source: "a
     front: frontDbToLabel(row.front),
     menteeIds: row.individual_mentee_id ? [row.individual_mentee_id] : [],
     attendanceRecorded: Boolean(row.attendance_recorded_at),
+    attendanceSource: row.attendance_source,
   };
 }
 
@@ -74,18 +75,20 @@ function assertNoError(error: { message: string } | null) {
   if (error) throw new Error(error.message);
 }
 
-export async function loadAppData() {
+// Intervalo semiaberto [fromIso, toIso): sem toIso, traz tudo a partir de fromIso (janela ativa).
+async function fetchMeetings(fromIso: string, toIso?: string): Promise<Meeting[]> {
   const supabase = getSupabaseBrowserClient();
-  // Mesma borda inferior da janela ativa do sync (activeSyncWindow() em lib/google-calendar.ts).
-  const activeWindowStart = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const [mentorsResult, menteesResult, meetingsResult, meetingMentorsResult, achievementsResult] = await Promise.all([
-    supabase.from("mentors").select("*").order("name"),
-    supabase.from("mentees").select("*").order("name"),
-    supabase.from("meetings").select("*").gte("starts_at", activeWindowStart).order("starts_at"),
-    supabase.from("meeting_mentors").select("meeting_id, mentor_id, source, meetings!inner(starts_at)").gte("meetings.starts_at", activeWindowStart),
-    supabase.from("achievements").select("*").order("achieved_at", { ascending: false }),
+  let meetingsQuery = supabase.from("meetings").select("*").gte("starts_at", fromIso);
+  let meetingMentorsQuery = supabase.from("meeting_mentors").select("meeting_id, mentor_id, source, meetings!inner(starts_at)").gte("meetings.starts_at", fromIso);
+  if (toIso) {
+    meetingsQuery = meetingsQuery.lt("starts_at", toIso);
+    meetingMentorsQuery = meetingMentorsQuery.lt("meetings.starts_at", toIso);
+  }
+  const [meetingsResult, meetingMentorsResult] = await Promise.all([
+    meetingsQuery.order("starts_at"),
+    meetingMentorsQuery,
   ]);
-  [mentorsResult, menteesResult, meetingsResult, meetingMentorsResult, achievementsResult].forEach((result) => assertNoError(result.error));
+  [meetingsResult, meetingMentorsResult].forEach((result) => assertNoError(result.error));
 
   const meetingMentors = new Map<string, Array<{ mentorId: string; source: "auto" | "manual" }>>();
   const meetingLinks = (meetingMentorsResult.data ?? []) as Array<{ meeting_id: string; mentor_id: string; source: "auto" | "manual" }>;
@@ -104,12 +107,48 @@ export async function loadAppData() {
     existing.mentorSource = existing.mentorSource === "manual" || meeting.mentorSource === "manual" ? "manual" : (existing.mentorSource ?? meeting.mentorSource);
   }
 
+  return [...dedupedMeetings.values()].sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
+}
+
+export async function loadAppData() {
+  const supabase = getSupabaseBrowserClient();
+  // Mesma borda inferior da janela ativa do sync (activeSyncWindow() em lib/google-calendar.ts).
+  const activeWindowStart = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const [mentorsResult, menteesResult, meetings, achievementsResult] = await Promise.all([
+    supabase.from("mentors").select("*").order("name"),
+    supabase.from("mentees").select("*").order("name"),
+    fetchMeetings(activeWindowStart),
+    supabase.from("achievements").select("*").order("achieved_at", { ascending: false }),
+  ]);
+  [mentorsResult, menteesResult, achievementsResult].forEach((result) => assertNoError(result.error));
+
   return {
     mentors: ((mentorsResult.data ?? []) as MentorRow[]).map(mapMentor),
     mentees: ((menteesResult.data ?? []) as MenteeRow[]).map(mapMentee),
-    meetings: [...dedupedMeetings.values()].sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()),
+    meetings,
     achievements: ((achievementsResult.data ?? []) as AchievementRow[]).map(mapAchievement),
   };
+}
+
+// Consulta sob demanda da Agenda para dias/semanas fora da janela ativa (issue 34 consome).
+export async function loadMeetingsRange(fromIso: string, toIso: string): Promise<Meeting[]> {
+  return fetchMeetings(fromIso, toIso);
+}
+
+export interface MeetingParticipationRow {
+  menteeId: string;
+  attended: boolean;
+  source: "auto" | "manual";
+}
+
+// Participações já registradas de um encontro (para pré-marcar presença no registro/conferência).
+export async function loadMeetingParticipation(meetingId: string): Promise<MeetingParticipationRow[]> {
+  const { data, error } = await getSupabaseBrowserClient()
+    .from("meeting_participations")
+    .select("mentee_id, attended, source")
+    .eq("meeting_id", meetingId);
+  assertNoError(error);
+  return (data ?? []).map((row) => ({ menteeId: row.mentee_id, attended: row.attended, source: row.source }));
 }
 
 export async function createMentee(input: Mentee) {

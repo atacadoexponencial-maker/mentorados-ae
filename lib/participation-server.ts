@@ -34,13 +34,14 @@ export async function saveParticipation(meetingId: string, entries: Participatio
 
     for (const entry of entries) {
       await db.query(
-        `insert into public.meeting_participations (meeting_id, mentee_id, attended, engagement_score, evolution_score, note)
-         values ($1, $2, $3, $4, $5, $6)
+        `insert into public.meeting_participations (meeting_id, mentee_id, attended, engagement_score, evolution_score, note, source)
+         values ($1, $2, $3, $4, $5, $6, 'manual')
          on conflict (meeting_id, mentee_id) do update set
            attended = excluded.attended,
            engagement_score = excluded.engagement_score,
            evolution_score = excluded.evolution_score,
-           note = excluded.note`,
+           note = excluded.note,
+           source = 'manual'`,
         [meetingId, entry.menteeId, entry.attended, entry.engagementScore, entry.evolutionScore, entry.note],
       );
       if (entry.attended) {
@@ -53,7 +54,15 @@ export async function saveParticipation(meetingId: string, entries: Participatio
       }
     }
 
-    await db.query("update public.meetings set attendance_recorded_at = now() where id = $1", [meetingId]);
+    // "Manual prevalece": remove linhas automáticas de mentorados que o mentor não confirmou
+    // (ex.: desmarcados no grupo). Linhas manuais nunca são apagadas (filtro source = 'auto').
+    await db.query(
+      `delete from public.meeting_participations
+        where meeting_id = $1 and source = 'auto' and not (mentee_id = any($2::uuid[]))`,
+      [meetingId, entries.map((entry) => entry.menteeId)],
+    );
+
+    await db.query("update public.meetings set attendance_recorded_at = now(), attendance_source = 'manual' where id = $1", [meetingId]);
     await db.query("commit");
   } catch (error) {
     await db.query("rollback").catch(() => undefined);
