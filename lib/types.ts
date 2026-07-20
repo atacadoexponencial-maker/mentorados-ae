@@ -44,6 +44,7 @@ export interface Meeting {
   front: MeetingFront;
   menteeIds: string[];
   attendanceRecorded: boolean;
+  attendanceSource: "auto" | "manual" | null;
 }
 
 export interface Achievement {

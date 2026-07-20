@@ -2,14 +2,14 @@
 
 import {
   AlertTriangle, ArrowLeft, ArrowUpDown, Award, Bell, CalendarDays, Check,
-  ChevronRight, CircleHelp, Clock3, Copy, ExternalLink, FileText, Filter, Link2,
+  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, CircleHelp, Clock3, Copy, ExternalLink, FileText, Filter, Link2,
   LayoutDashboard, LogOut, Medal, Menu, MoreHorizontal, Pencil, Plus, RefreshCw, Search, Settings,
   Sparkles, Target, Trophy, UserCheck, Users, Video, X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Achievement, Meeting, Mentee, MenteeStatus, Mentor, Risk } from "@/lib/types";
 import { briefingSections, briefingLabels } from "@/lib/briefing-schema";
-import { createAchievement, createMentee, generateBriefingLink, loadBriefing, loadMenteeHistory, loadMenteeMonthMeetings, loadMentorMonthStats, markBriefingReviewed, loadAppData, saveParticipation, syncGoogleCalendar, updateMeetingMentor, updateMenteeContact, updateMenteeRisk, updateMenteeStatus, type MenteeBriefing, type MenteeHistoryEntry, type MentorMonthStats, type MonthMeeting } from "@/lib/supabase/data";
+import { createAchievement, createMentee, generateBriefingLink, loadBriefing, loadMenteeHistory, loadMenteeMonthMeetings, loadMeetingParticipation, loadMeetingsRange, loadMentorMonthStats, markBriefingReviewed, loadAppData, saveParticipation, syncGoogleCalendar, updateMeetingMentor, updateMenteeContact, updateMenteeRisk, updateMenteeStatus, type MenteeBriefing, type MenteeHistoryEntry, type MentorMonthStats, type MonthMeeting } from "@/lib/supabase/data";
 
 type View = "dashboard" | "mentees" | "agenda" | "achievements";
 
@@ -28,6 +28,8 @@ function meetingDayKey(value: string) {
 
 function menteeById(id: string, list: Mentee[]) { return list.find((item) => item.id === id)!; }
 function todayDateKey() { return meetingDateKeyFormatter.format(new Date()); }
+// Encontro "passado" = já terminou (startsAt + duração). Encontro em andamento conta como futuro (o Meet ainda é útil).
+function isMeetingPast(meeting: Meeting) { return new Date(meeting.startsAt).getTime() + meeting.duration * 60000 < Date.now(); }
 
 export function MentoriaApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: () => Promise<void> }) {
   const [view, setView] = useState<View>("dashboard");
@@ -278,8 +280,43 @@ function MenteesView({ list, search, setSearch, risk, setRisk, status, setStatus
   </div>;
 }
 
+function addDays(key: string, days: number) {
+  return meetingDateKeyFormatter.format(new Date(new Date(`${key}T12:00:00-03:00`).getTime() + days * 86400000));
+}
+
 function AgendaView({ meetings, mentors, onMentorChange, openMeeting }: { meetings: Meeting[]; mentors: Mentor[]; onMentorChange: (meetingId: string, mentorId: string) => void; openMeeting: (m: Meeting) => void }) {
-  const groupedMeetings = meetings.reduce((groups, meeting) => {
+  const [anchorKey, setAnchorKey] = useState(todayDateKey);
+  // Encontros passados (anteriores à janela ativa carregada por loadAppData) são buscados sob demanda ao navegar para trás.
+  const [pastMeetings, setPastMeetings] = useState<Meeting[]>([]);
+  const [earliestLoadedKey, setEarliestLoadedKey] = useState<string | null>(null);
+  const [loadingPast, setLoadingPast] = useState(false);
+  const [pastError, setPastError] = useState(false);
+  const [retryTick, setRetryTick] = useState(0);
+
+  useEffect(() => {
+    const today = todayDateKey();
+    if (anchorKey >= today) return; // janela no presente/futuro: a prop já cobre
+    if (earliestLoadedKey !== null && anchorKey >= earliestLoadedKey) return; // intervalo já em cache
+    const toKey = earliestLoadedKey ?? today;
+    const fromIso = new Date(`${anchorKey}T00:00:00-03:00`).toISOString();
+    const toIso = new Date(`${toKey}T00:00:00-03:00`).toISOString();
+    let active = true;
+    setLoadingPast(true);
+    setPastError(false);
+    loadMeetingsRange(fromIso, toIso)
+      .then((rows) => { if (active) { setPastMeetings((prev) => { const map = new Map(prev.map((m) => [m.id, m])); for (const m of rows) map.set(m.id, m); return Array.from(map.values()); }); setEarliestLoadedKey(anchorKey); setLoadingPast(false); } })
+      .catch(() => { if (active) { setPastError(true); setLoadingPast(false); } });
+    return () => { active = false; };
+  }, [anchorKey, earliestLoadedKey, retryTick]);
+
+  const allMeetings = useMemo(() => {
+    const map = new Map<string, Meeting>();
+    for (const m of pastMeetings) map.set(m.id, m);
+    for (const m of meetings) map.set(m.id, m); // prop (recém-sincronizada) prevalece na sobreposição de borda
+    return Array.from(map.values());
+  }, [meetings, pastMeetings]);
+
+  const groupedMeetings = allMeetings.reduce((groups, meeting) => {
     const key = meetingDayKey(meeting.startsAt);
     const current = groups.get(key) ?? [];
     current.push(meeting);
@@ -287,49 +324,78 @@ function AgendaView({ meetings, mentors, onMentorChange, openMeeting }: { meetin
     return groups;
   }, new Map<string, Meeting[]>());
 
-  const groupedEntries = [...groupedMeetings.entries()];
-  const [selectedDayKey, setSelectedDayKey] = useState(groupedEntries[0]?.[0] ?? "");
-
-  useEffect(() => {
-    if (!groupedEntries.length) {
-      setSelectedDayKey("");
-      return;
+  const [selectedDayKey, setSelectedDayKey] = useState(() => {
+    const today = todayDateKey();
+    const initialGroups = new Map<string, boolean>();
+    for (const m of meetings) initialGroups.set(meetingDayKey(m.startsAt), true);
+    if (initialGroups.has(today)) return today;
+    for (let index = 1; index < 5; index++) {
+      const key = addDays(today, index);
+      if (initialGroups.has(key)) return key;
     }
-    if (!selectedDayKey || !groupedMeetings.has(selectedDayKey)) {
-      setSelectedDayKey(groupedEntries[0][0]);
-    }
-  }, [groupedEntries, groupedMeetings, selectedDayKey]);
+    return today;
+  });
 
-  const weekDays = groupedEntries.slice(0, 5).map(([key, items], index) => {
+  function shiftWindow(days: number) {
+    const nextAnchor = addDays(anchorKey, days);
+    const visibleKeys = Array.from({ length: 5 }, (_, index) => addDays(nextAnchor, index));
+    setAnchorKey(nextAnchor);
+    setSelectedDayKey((current) => visibleKeys.includes(current) ? current : addDays(current, days));
+  }
+
+  function jumpTo(key: string) {
+    if (!key) return;
+    setAnchorKey(key);
+    setSelectedDayKey(key);
+  }
+
+  const weekDays = Array.from({ length: 5 }, (_, index) => {
+    const key = addDays(anchorKey, index);
     const currentDate = new Date(`${key}T12:00:00-03:00`);
     return {
       key,
       label: weekdayShort.format(currentDate).replace(".", "").toUpperCase(),
       day: currentDate.getDate(),
-      current: key === selectedDayKey || (!selectedDayKey && index === 0),
-      total: items.length,
+      current: key === selectedDayKey,
+      total: groupedMeetings.get(key)?.length ?? 0,
     };
   });
 
-  const visibleEntries = selectedDayKey
-    ? groupedEntries.filter(([key]) => key === selectedDayKey)
-    : groupedEntries.slice(0, 1);
+  const selectedMeetings = groupedMeetings.get(selectedDayKey) ?? [];
+  const selectedDate = new Date(`${selectedDayKey}T12:00:00-03:00`);
+  const isPastDay = selectedDayKey < todayDateKey();
 
   return <div className="full-page"><section className="section-heading"><div><p>GOOGLE CALENDAR</p><h1>Agenda</h1><h2>Encontros da equipe em um só lugar.</h2></div><div className="synced-pill"><span className="google-g">G</span><i /> Sincronizado</div></section>
-    <div className="week-strip">{weekDays.map((day) => <button key={day.key} className={day.current ? "today" : ""} onClick={() => setSelectedDayKey(day.key)}><small>{day.label}</small><strong>{day.day}</strong>{day.current && <i />}</button>)}</div>
-    <div className="agenda-full">{visibleEntries.length ? visibleEntries.map(([key, items]) => {
-      const currentDate = new Date(`${key}T12:00:00-03:00`);
-      return <div key={key}>
-        <div className="day-label"><span>DIA SELECIONADO</span><p>{longDate.format(currentDate)} · {items.length} encontro(s)</p></div>
-        {items.map((item) => <AgendaItem key={item.id} item={item} mentors={mentors} onMentorChange={onMentorChange} open={() => openMeeting(item)} />)}
-      </div>;
-    }) : <Empty text="Nenhum encontro sincronizado com o Calendar." />}</div>
+    <div className="agenda-nav">
+      <div className="agenda-nav-arrows">
+        <button onClick={() => shiftWindow(-7)} aria-label="Semana anterior" title="Semana anterior"><ChevronsLeft size={17} /></button>
+        <button onClick={() => shiftWindow(-1)} aria-label="Dia anterior" title="Dia anterior"><ChevronLeft size={17} /></button>
+        <button onClick={() => shiftWindow(1)} aria-label="Próximo dia" title="Próximo dia"><ChevronRight size={17} /></button>
+        <button onClick={() => shiftWindow(7)} aria-label="Próxima semana" title="Próxima semana"><ChevronsRight size={17} /></button>
+      </div>
+      <input type="date" value={selectedDayKey} onChange={(e) => jumpTo(e.target.value)} aria-label="Ir para uma data" />
+      <button className="secondary-button" onClick={() => jumpTo(todayDateKey())}>Hoje</button>
+    </div>
+    <div className="week-strip">{weekDays.map((day) => <button key={day.key} className={`${day.current ? "today" : ""} ${day.total ? "" : "no-meetings"}`.trim()} onClick={() => setSelectedDayKey(day.key)}><small>{day.label}</small><strong>{day.day}</strong>{day.current && <i />}</button>)}</div>
+    <div className="agenda-full">
+      <div className="day-label"><span>DIA SELECIONADO</span><p>{longDate.format(selectedDate)} · {selectedMeetings.length} encontro(s)</p></div>
+      {selectedMeetings.length
+        ? selectedMeetings.map((item) => <AgendaItem key={item.id} item={item} mentors={mentors} onMentorChange={onMentorChange} open={() => openMeeting(item)} />)
+        : isPastDay && loadingPast
+          ? <p className="muted">Carregando...</p>
+          : isPastDay && pastError
+            ? <div className="data-error"><span>Não foi possível carregar os encontros deste dia.</span><button onClick={() => setRetryTick((tick) => tick + 1)}><RefreshCw size={15} /> Tentar novamente</button></div>
+            : <Empty text={`Nenhum encontro em ${longDate.format(selectedDate)}.`} />}
+    </div>
   </div>;
 }
 
 function AgendaItem({ item, mentors, onMentorChange, open }: { item: Meeting; mentors: Mentor[]; onMentorChange: (meetingId: string, mentorId: string) => void; open: () => void }) {
   const start = new Date(item.startsAt);
-  return <div className="agenda-item"><div className="date-block"><b>{time.format(start)}</b><small>{item.duration} min</small></div><div className={`agenda-accent ${item.type === "Grupo" ? "group" : ""}`} /><div className="agenda-copy"><span className={`type-badge ${item.type === "Grupo" ? "group" : ""}`}>{item.type}</span><h3>{item.title}</h3><p>{item.front}</p><MentorChip meeting={item} mentors={mentors} onChange={(mentorId) => onMentorChange(item.id, mentorId)} /></div><a href={item.meetUrl} target="_blank"><Video size={17} /> Entrar</a><button className="secondary-button" onClick={open}><UserCheck size={17} /> Registrar participação</button></div>;
+  const isPast = isMeetingPast(item);
+  // Origem da participação: automática (coletada do Meet), confirmada pelo mentor ou sem registro.
+  const origin = item.attendanceSource === "auto" ? { variant: "auto", label: "Automática (Meet)" } : item.attendanceSource === "manual" ? { variant: "confirmada", label: "Confirmada" } : { variant: "sem-registro", label: "Sem registro" };
+  return <div className={`agenda-item${isPast ? " past" : ""}`}><div className="date-block"><b>{time.format(start)}</b><small>{item.duration} min</small></div><div className={`agenda-accent ${item.type === "Grupo" ? "group" : ""}`} /><div className="agenda-copy"><span className={`type-badge ${item.type === "Grupo" ? "group" : ""}`}>{item.type}</span>{isPast && <span className={`origin-badge ${origin.variant}`}><i />{origin.label}</span>}<h3>{item.title}</h3><p>{item.front}</p><MentorChip meeting={item} mentors={mentors} onChange={(mentorId) => onMentorChange(item.id, mentorId)} /></div>{isPast ? <><a href={item.meetUrl} target="_blank"><Video size={17} /> Meet</a><button className="primary-button small" onClick={open}><UserCheck size={17} /> Conferir participação</button></> : <><a href={item.meetUrl} target="_blank"><Video size={17} /> Entrar</a><button className="secondary-button" onClick={open}><UserCheck size={17} /> Registrar participação</button></>}</div>;
 }
 
 function AchievementsView({ achievements, mentees, add }: { achievements: Achievement[]; mentees: Mentee[]; add: () => void }) {
@@ -373,13 +439,33 @@ function MenteeDrawer({ mentee, mentors, allMentees, achievements, close, update
   </div></aside></div>;
 }
 
+// Origem do registro de participação, exibida no topo do modal (issue 40/41).
+const attendanceOrigin = {
+  auto: { variant: "auto", label: "Preenchida automaticamente (Google Meet)" },
+  manual: { variant: "confirmada", label: "Confirmada pelo mentor" },
+  none: { variant: "sem-registro", label: "Sem registro" },
+} as const;
+
 function AttendanceModal({ meeting, mentees, close, onSaved }: { meeting: Meeting; mentees: Mentee[]; close: () => void; onSaved: () => void }) {
-  const [present, setPresent] = useState<string[]>(meeting.type === "Individual" ? meeting.menteeIds : []);
+  const [present, setPresent] = useState<string[]>(meeting.type === "Individual" && !meeting.attendanceRecorded ? meeting.menteeIds : []);
   const [engagement, setEngagement] = useState("");
   const [evolution, setEvolution] = useState("");
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [loadingPresence, setLoadingPresence] = useState(meeting.attendanceRecorded);
+  const origin = meeting.attendanceSource === "auto" ? attendanceOrigin.auto : meeting.attendanceSource === "manual" ? attendanceOrigin.manual : attendanceOrigin.none;
+
+  // Pré-marca a presença conforme o registro já existente (automático do Meet ou confirmado antes).
+  useEffect(() => {
+    if (!meeting.attendanceRecorded) return;
+    let active = true;
+    setLoadingPresence(true);
+    loadMeetingParticipation(meeting.id)
+      .then((rows) => { if (active) { setPresent(rows.filter((r) => r.attended).map((r) => r.menteeId)); setLoadingPresence(false); } })
+      .catch(() => { if (active) setLoadingPresence(false); });
+    return () => { active = false; };
+  }, [meeting.id, meeting.attendanceRecorded]);
 
   async function submit() {
     setSaving(true);
@@ -399,7 +485,7 @@ function AttendanceModal({ meeting, mentees, close, onSaved }: { meeting: Meetin
     }
   }
 
-  return <Modal title="Registrar participação" subtitle={meeting.title} close={close}><div className="meeting-summary"><CalendarDays size={18} /><div><b>{date.format(new Date(meeting.startsAt))} às {time.format(new Date(meeting.startsAt))}</b><small>{meeting.type} · {meeting.duration} minutos</small></div></div>{meeting.type === "Individual" ? <div className="attendance-person"><Avatar item={menteeById(meeting.menteeIds[0], mentees)} /><div><b>{menteeById(meeting.menteeIds[0], mentees).name}</b><small>Compareceu ao encontro?</small></div><div className="segmented"><button className={present.length ? "selected" : ""} onClick={() => setPresent(meeting.menteeIds)}>Sim</button><button className={!present.length ? "selected no" : ""} onClick={() => setPresent([])}>Não</button></div></div> : <div><label className="form-label">QUEM PARTICIPOU?</label><div className="participant-grid">{mentees.filter((m) => m.status === "Ativo").map((item) => <button key={item.id} className={present.includes(item.id) ? "checked" : ""} onClick={() => setPresent((list) => list.includes(item.id) ? list.filter((id) => id !== item.id) : [...list, item.id])}><span className="checkbox">{present.includes(item.id) && <Check size={13} />}</span><Avatar item={item} /><span>{item.name}</span></button>)}</div></div>}<div className="two-fields"><label>Nota de engajamento<select value={engagement} onChange={(e) => setEngagement(e.target.value)}><option value="">Selecione</option><option value="1">1 · Muito baixo</option><option value="2">2 · Baixo</option><option value="3">3 · Bom</option><option value="4">4 · Alto</option><option value="5">5 · Excelente</option></select></label>{meeting.type === "Individual" && <label>Nota de evolução<select value={evolution} onChange={(e) => setEvolution(e.target.value)}><option value="">Selecione</option><option value="1">1 · Muito baixa</option><option value="2">2 · Baixa</option><option value="3">3 · Boa</option><option value="4">4 · Alta</option><option value="5">5 · Excelente</option></select></label>}</div><label className="input-label">Observação rápida<textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Contexto importante, decisões ou próximos passos..." /></label>{saveError && <div className="auth-error">{saveError}</div>}<div className="modal-actions"><button className="ghost-button" onClick={close}>Cancelar</button><button className="primary-button" onClick={submit} disabled={saving}><Check size={17} /> {saving ? "Salvando..." : "Salvar participação"}</button></div></Modal>;
+  return <Modal title="Registrar participação" subtitle={meeting.title} close={close}><div className="meeting-summary"><CalendarDays size={18} /><div><b>{date.format(new Date(meeting.startsAt))} às {time.format(new Date(meeting.startsAt))}</b><small>{meeting.type} · {meeting.duration} minutos</small></div></div><div className={`origin-banner ${origin.variant}`}><i />{origin.label}</div>{meeting.type === "Individual" ? <div className="attendance-person"><Avatar item={menteeById(meeting.menteeIds[0], mentees)} /><div><b>{menteeById(meeting.menteeIds[0], mentees).name}</b><small>Compareceu ao encontro?</small></div><div className="segmented"><button className={present.length ? "selected" : ""} onClick={() => setPresent(meeting.menteeIds)}>Sim</button><button className={!present.length ? "selected no" : ""} onClick={() => setPresent([])}>Não</button></div></div> : <div><label className="form-label">QUEM PARTICIPOU?</label><div className="participant-grid">{mentees.filter((m) => m.status === "Ativo").map((item) => <button key={item.id} className={present.includes(item.id) ? "checked" : ""} onClick={() => setPresent((list) => list.includes(item.id) ? list.filter((id) => id !== item.id) : [...list, item.id])}><span className="checkbox">{present.includes(item.id) && <Check size={13} />}</span><Avatar item={item} /><span>{item.name}</span></button>)}</div></div>}<div className="two-fields"><label>Nota de engajamento<select value={engagement} onChange={(e) => setEngagement(e.target.value)}><option value="">Selecione</option><option value="1">1 · Muito baixo</option><option value="2">2 · Baixo</option><option value="3">3 · Bom</option><option value="4">4 · Alto</option><option value="5">5 · Excelente</option></select></label>{meeting.type === "Individual" && <label>Nota de evolução<select value={evolution} onChange={(e) => setEvolution(e.target.value)}><option value="">Selecione</option><option value="1">1 · Muito baixa</option><option value="2">2 · Baixa</option><option value="3">3 · Boa</option><option value="4">4 · Alta</option><option value="5">5 · Excelente</option></select></label>}</div><label className="input-label">Observação rápida<textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Contexto importante, decisões ou próximos passos..." /></label>{saveError && <div className="auth-error">{saveError}</div>}<div className="modal-actions"><button className="ghost-button" onClick={close}>Cancelar</button><button className="primary-button" onClick={submit} disabled={saving || loadingPresence}><Check size={17} /> {saving ? "Confirmando..." : "Confirmar registro"}</button></div></Modal>;
 }
 
 function NewMenteeModal({ close, save }: { close: () => void; save: (m: Mentee) => void }) {

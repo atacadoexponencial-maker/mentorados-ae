@@ -207,3 +207,27 @@ html,body{background:#f4f1eb;color:#1f1f1f}
 .history-loose b{color:#5d4a2e}
 .history-loose small{color:#817a6f}
 .history-error{margin:12px 0 0}
+
+/* Agenda — navegação de datas e cards de encontros passados (protótipo) */
+.agenda-nav{display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.agenda-nav-arrows{display:flex;align-items:center;gap:2px;border:1px solid var(--line);background:rgba(255,255,255,.7);border-radius:999px;padding:3px}
+.agenda-nav-arrows button{border:0;background:none;width:33px;height:33px;border-radius:50%;display:grid;place-items:center;color:#5f6a62;cursor:pointer}
+.agenda-nav-arrows button:hover{background:#e9e5dc;color:var(--ink)}
+.agenda-nav input[type="date"]{height:41px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.7);padding:0 14px;font-size:11px;font-family:inherit;color:var(--ink);outline:none;cursor:pointer}
+.agenda-nav input[type="date"]:focus{border-color:#c7cabf;background:#fff}
+.agenda-nav .secondary-button{min-height:41px;padding:0 18px;text-transform:uppercase;letter-spacing:.8px;font-size:10px}
+.week-strip button.no-meetings small,.week-strip button.no-meetings strong{opacity:.35}
+.week-strip button.today.no-meetings small,.week-strip button.today.no-meetings strong{opacity:.6}
+.origin-badge{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:3px 9px;font-size:8px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;margin-left:6px;vertical-align:top}
+.origin-badge i{width:6px;height:6px;border-radius:50%}
+.origin-badge.confirmada{background:#e3ecdf;color:#3d6b4f}.origin-badge.confirmada i{background:#5d9875}
+.origin-badge.sem-registro{background:#fee1e1;color:#ad4141}.origin-badge.sem-registro i{background:#f87171}
+/* Variante "auto": participação coletada automaticamente do Google Meet */
+.origin-badge.auto{background:#f4e7bd;color:#8d6700}.origin-badge.auto i{background:#e0a106}
+.agenda-item.past .agenda-accent{opacity:.45}
+.origin-banner{display:flex;align-items:center;gap:8px;border-radius:10px;padding:9px 13px;font-size:11px;font-weight:600;letter-spacing:.3px;margin:2px 0 4px}
+.origin-banner i{width:8px;height:8px;border-radius:50%;flex:none}
+.origin-banner.confirmada{background:#e3ecdf;color:#3d6b4f}.origin-banner.confirmada i{background:#5d9875}
+.origin-banner.sem-registro{background:#f4f0e9;color:#7a6f5c}.origin-banner.sem-registro i{background:#b8a888}
+.origin-banner.auto{background:#f4e7bd;color:#8d6700}.origin-banner.auto i{background:#e0a106}
+@media(max-width:760px){.agenda-nav{gap:6px}.agenda-nav input[type="date"]{flex:1;min-width:0}.agenda-nav .secondary-button{padding:0 14px}.agenda-item .primary-button{grid-column:3;width:max-content;margin-bottom:12px}}
